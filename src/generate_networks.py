@@ -1,10 +1,8 @@
 import pygambit as gambit
 import numpy as np
-from couplednetworks import create_networks
 import networkx as nx
 import time
 import os
-
 
 def ncr(n, r):
     import operator as op
