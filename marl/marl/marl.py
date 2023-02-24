@@ -57,7 +57,7 @@ class MARL(TrainableAgent, MAS):
     :param agents_list: (list) The list of agents in the MARL model
     :param name: (str) The name of the system
     """
-    def __init__(self, agents_list=[],name='marl', log_dir="logs",nash_policies=None,utils=None,act_degree=1):
+    def __init__(self,agents_list=[],name='marl', log_dir="logs",nash_policies=None,utils=None,act_degree=1,hparams = {}):
         MAS.__init__(self, agents_list=agents_list, name=name)
         self.experience = marl.experience.make("ReplayMemory", capacity=10000)
         self.log_dir = log_dir
@@ -65,6 +65,7 @@ class MARL(TrainableAgent, MAS):
         self.utils = utils
         self.last_policies = None
         self.init_writer(log_dir)
+        self.writer.add_hparams(hparams,{})
         self.explt_opp_update_freq = 1000
         self.degree = [ag.degree for ag in agents_list]
         self.exploited = 'None'
