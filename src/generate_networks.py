@@ -3,50 +3,7 @@ import numpy as np
 import networkx as nx
 import time
 import os
-
-def ncr(n, r):
-    import operator as op
-    from functools import reduce
-    r = min(r, n-r)
-    numer = reduce(op.mul, range(n, n-r, -1), 1)
-    denom = reduce(op.mul, range(1, r+1), 1)
-    return numer // denom  # or / in Python 2
-
-def create_random_nets(save_dir,num_nodes,num2gen=10,gen_threshes=False,show=False):  
-    #import random
-    #random.seed(np.random.randint(10000))
-    for i in range(num2gen):
-        [network_a, network_b] = create_networks('SF',num_nodes=num_nodes)
-        if save_dir != '':
-            f = save_dir + 'net_{}.edgelist'.format(i)
-            nx.write_edgelist(network_b,f)
-            if gen_threshes:
-                thresholds = []
-                for node in network_b.nodes():
-                    thresh = 1/len(network_b[node])*np.random.choice([i for i in range(1,len(network_b[node])+1)])
-                    thresholds.append(thresh)
-                ft = save_dir + 'net_{}_thresh.npy'.format(i)
-                np.save(ft,np.asarray(thresholds))
-                #print(f'Saved to {ft}')
-
-    if show:
-        print('Showing one of the generated networks')
-        import matplotlib.pyplot as plt
-        nx.draw(network_b,with_labels=True)
-        plt.draw()
-        plt.show()
-    return [network_a,network_b]
-
-def create_simple_random_nets():
-    random.seed(np.random.randint(0,10000))
-    net = nx.Graph()
-    nodes = [0,1,2]
-    net.add_nodes_from(nodes)
-    double_node = random.sample(nodes,1)[0]
-    single_nodes = nodes.copy()
-    single_nodes.remove(double_node)
-    net.add_edges_from([(single_nodes[0],double_node),(double_node,single_nodes[1])])
-    return [net,net]
+from src.utils import create_random_nets, ncr
 
 def get_nash_eqs(env):
     num_nodes_attacked = env.num_nodes_attacked
@@ -87,8 +44,8 @@ def get_nash_eqs(env):
 
 if __name__ == '__main__':
     import argparse
-    from couplednetworks_gym_main import CoupledNetsEnv2
-    from couplednetworks_gym_cfa import SimpleCascadeEnv
+    from src.main import NetworkCascEnv
+
     parser = argparse.ArgumentParser(description='Network Generation Args')
     parser.add_argument("--num_nodes",type=int,default=100)
     parser.add_argument("--num2gen",type=int,default=10)
@@ -98,7 +55,7 @@ if __name__ == '__main__':
     parser.add_argument("--env_type", default='NetworkCascEnv',help='What type of gym environment should be used to generate the NashEQ utility')
     parser.add_argument("--cascade_type", default='all', help='What type of cascading to use to get utility.')
     args = parser.parse_args()
-    Cascade_Types = ['threshold','shortPath']
+    Cascade_Types = ['threshold','shortPath','coupled']
 
     if args.net_save_dir[-1] != '/':
         args.net_save_dir += '/'
@@ -125,8 +82,6 @@ if __name__ == '__main__':
             for i,f in enumerate(files):
                 if args.env_type == 'NetworkCascEnv':
                     env = NetworkCascEnv(args.num_nodes,args.p,args.p,'File',filename = os.path.join(full_dir,f),cascade_type=c)
-                elif args.env_type == 'CoupledNetsEnv2':
-                    env = CoupledNetsEnv2(args.num_nodes,args.p,args.p,'File',filename = os.path.join(full_dir,f))
                 else:
                     print(f'Environment type {args.env_type} is not supported')
                     exit()

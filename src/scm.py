@@ -2,7 +2,7 @@ import networkx as nx
 import generate_networks as gn
 import numpy as np
 import matplotlib.pyplot as plt
-
+from src.utils import create_random_nets
 class SCM():
 	def __init__(self,G, cascade_type='threshold',comm_net=None,thresholds=None):
 		self.G = G
@@ -11,7 +11,7 @@ class SCM():
 		#SCM is a directed graph with 2 nodes for every node in G. Nodes 1-N represent state of nodes in G at time 0, and nodes N+1-2N represent state of nodes at time 1.
 		self.SCM = nx.DiGraph()
 
-		if cascade_type == 'threshold' or 'shortPath':
+		if cascade_type == 'threshold' or cascade_type == 'shortPath':
 			#Add thresholds to the nodes in G
 			if thresholds is None:
 				self.thresholds = []
@@ -51,17 +51,24 @@ class SCM():
 		self.reset()
 
 	def reset(self):
-		for i in range(len(self.SCM.nodes())):
-			self.SCM.nodes()[i]['state'] = 1
-		if self.cascade_type == 'shortPath':
-			self.loads = np.zeros(self.G.number_of_nodes())
-			paths = dict(nx.all_pairs_shortest_path(self.G))
-			for s in paths:
-				for t in paths[s]:
-					for n in paths[s][t]:
-						if s < t:
-							self.loads[n] += 1	
-			self.capacity = [int(np.round(self.loads[n]*max([(1+self.thresholds[n]),1]))) for n in range(self.G.number_of_nodes())]
+		if self.cascade_type == 'coupled':
+			for d in ['P','C']:
+				for i in range(int(len(self.SCM.nodes())/2)):
+					self.SCM.nodes()[f'{d}{i}']['state'] = 1
+			self.dp = [self.G.degree(n) for n in range(self.G.number_of_nodes())]
+			self.dc = [self.comm_net.degree(n) for n in range(self.comm_net.number_of_nodes())]
+		else:
+			for i in range(len(self.SCM.nodes())):
+				self.SCM.nodes()[i]['state'] = 1
+			if self.cascade_type == 'shortPath':
+				self.loads = np.zeros(self.G.number_of_nodes())
+				paths = dict(nx.all_pairs_shortest_path(self.G))
+				for s in paths:
+					for t in paths[s]:
+						for n in paths[s][t]:
+							if s < t:
+								self.loads[n] += 1	
+				self.capacity = [int(np.round(self.loads[n]*max([(1+self.thresholds[n]),1]))) for n in range(self.G.number_of_nodes())]
 
 	def check_cascading_failure(self,initial_failures):
 		for n in initial_failures:
@@ -77,8 +84,16 @@ class SCM():
 		steady_state = False
 		failure_set = []
 		pow_copy = self.G.copy()
+
 		if self.cascade_type == 'coupled':
 			comm_copy = self.comm_net.copy()
+			#Check initial cascades
+			for n in range(0, self.G.number_of_nodes()):
+				if self.SCM.nodes()[f'P{n}']['state'] == 0:
+					if n not in failure_set:
+						failure_set.append(n) 
+						pow_copy.remove_node(n)
+						comm_copy.remove_node(n)
 		if self.cascade_type == 'shortPath':
 			#Check initial cascades
 			for n in range(0, self.G.number_of_nodes()):
@@ -106,7 +121,6 @@ class SCM():
 					if self.SCM.nodes()[n]['state'] != self.SCM.nodes()[n+self.G.number_of_nodes()]['state']:
 						steady_state = False
 						self.SCM.nodes()[n]['state'] = self.SCM.nodes()[n+self.G.number_of_nodes()]['state']
-				x += 1
 				#debugging
 				# if steady_state:
 				# 	for n in failure_set:
@@ -143,7 +157,6 @@ class SCM():
 					if self.SCM.nodes()[n]['state'] != self.SCM.nodes()[n+self.G.number_of_nodes()]['state']:
 						steady_state = False
 						self.SCM.nodes()[n]['state'] = self.SCM.nodes()[n+self.G.number_of_nodes()]['state']
-				x += 1
 			elif self.cascade_type == 'coupled':
 				#Check immediate cascades
 				for n in range(0, self.G.number_of_nodes()):
@@ -154,7 +167,6 @@ class SCM():
 							failure_set.append(n) 
 							pow_copy.remove_node(n)
 							comm_copy.remove_node(n)
-
 				#Remove any edges in copy networks that don't meet coupled path requirement
 				for edge in pow_copy.edges():
 					if not nx.has_path(comm_copy,edge[0],edge[1]):
@@ -169,10 +181,10 @@ class SCM():
 						if n not in failure_set:
 							self.SCM.nodes()[f'P{n+self.G.number_of_nodes()}']['state'] = 0
 							self.SCM.nodes()[f'C{n+self.G.number_of_nodes()}']['state'] = 0
-							failure_set.append(n)
+							failure_set.append(n) 
 							pow_copy.remove_node(n)
 							comm_copy.remove_node(n)
-						
+
 				#Check if steady state has been reached
 				steady_state = True
 				for n in range(0, self.G.number_of_nodes()):
@@ -183,11 +195,22 @@ class SCM():
 					if self.SCM.nodes()[f'C{n}']['state'] != self.SCM.nodes()[f'C{n+self.G.number_of_nodes()}']['state']:
 						steady_state = False
 						self.SCM.nodes()[f'C{n}']['state'] = self.SCM.nodes()[f'C{n+self.G.number_of_nodes()}']['state']
-
-				x += 1
+				self.dp = np.zeros(self.G.number_of_nodes())
+				for n in range(self.G.number_of_nodes()):
+					if n in pow_copy.nodes():
+						self.dp[n] = pow_copy.degree(n)
+					else:
+						self.dp[n] = 0
+				self.dc = np.zeros(self.comm_net.number_of_nodes())
+				for n in range(self.comm_net.number_of_nodes()):
+					if n in comm_copy.nodes():
+						self.dc[n] = comm_copy.degree(n)
+					else:
+						self.dc[n] = 0 
 			else:
 				print(f'Cascade type {self.cascade_type} not supported')
 				exit()
+			x += 1
 		if x >= ee:
 			print(f'Steady State not reached. Returning with failure set {failure_set}')
 		return failure_set
@@ -203,8 +226,8 @@ if __name__ == '__main__':
 	num_attacked = 1
 
 	for i in range(1000):
-		comm_net,pow_net = gn.create_random_nets('',num_nodes,num2gen=1,show=False)
-		scm = SCM(pow_net,cascade_type='shortPath')
+		comm_net,pow_net = create_random_nets('',num_nodes,num2gen=1,show=False)
+		scm = SCM(pow_net,cascade_type='coupled',comm_net=comm_net)
 		for j in range(100):
 			initial_failures = np.random.choice([i for i in range(num_nodes)],size=num_attacked,replace=False)
 			num_fails = []

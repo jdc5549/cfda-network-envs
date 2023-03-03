@@ -24,20 +24,29 @@ class NetworkCascEnv(gym.Env):
         if self.network_type == 'File' and filename is not None:
             if isinstance(self.filename,str):
                 self.net = nx.read_edgelist(self.filename,nodetype=int) 
-                thresholds = np.load(self.filename[:-9] + '_thresh.npy')
-                self.scm = SCM(self.net,thresholds=thresholds,cascade_type=self.cascade_type)
+                if self.cascade_type == 'coupled':
+                    self.scm = SCM(self.net,comm_net=self.net,cascade_type=self.cascade_type)
+                else:
+                    thresholds = np.load(self.filename[:-9] + '_thresh.npy')
+                    self.scm = SCM(self.net,thresholds=thresholds,cascade_type=self.cascade_type)
                 self.obs = self.get_obs()
             else:
                 self.obs = []
                 for fn in self.filename:
                     self.net = nx.read_edgelist(fn,nodetype=int) 
-                    thresholds = np.load(fn[:-9] + '_thresh.npy')
-                    self.scm = SCM(self.net,thresholds=thresholds,cascade_type=self.cascade_type)
+                    if self.cascade_type == 'coupled':
+                        self.scm = SCM(self.net,comm_net=self.net,cascade_type=self.cascade_type)
+                    else:
+                        thresholds = np.load(fn[:-9] + '_thresh.npy')
+                        self.scm = SCM(self.net,thresholds=thresholds,cascade_type=self.cascade_type)
                     self.obs.append(self.get_obs())
                 self.fid = len(self.filename)-1
         else:
-            _,self.net  = create_random_nets('',self.net_size,num2gen=1,show=False)
-            self.scm = SCM(self.net,cascade_type=self.cascade_type)
+            comm_net,self.net  = create_random_nets('', self.net_size,num2gen=1,show=False)
+            if self.cascade_type == 'coupled':
+                self.scm = SCM(self.net,cascade_type=self.cascade_type,comm_net=comm_net)
+            else:
+                self.scm = SCM(self.net,cascade_type=self.cascade_type)
         self.num_nodes_attacked = int(math.floor(p_atk * self.net.number_of_nodes()))
         #print("Attacking {} of {} Nodes".format(self.num_nodes_attacked,self.net_b.number_of_nodes()))
         self.num_nodes_defended = int(math.floor(p_def * self.net.number_of_nodes()))
@@ -90,13 +99,14 @@ class NetworkCascEnv(gym.Env):
         #toc = time.perf_counter()
         #print('Node Names: ', toc - tic)
 
-        #tic = time.perf_counter()
-        max_t = max(self.scm.thresholds)
-        min_t= min(self.scm.thresholds)
-        norm_thresh = [2*(t-min_t)/(max_t-min_t)-1 if (max_t-min_t) != 0 else 0 for t in self.scm.thresholds]
-        metrics.append(norm_thresh)
-        #toc = time.perf_counter()
-        #print('thresholds: ', toc - tic)
+        if self.cascade_type == 'threshold' or self.cascade_type == 'shortPath':
+            #tic = time.perf_counter()
+            max_t = max(self.scm.thresholds)
+            min_t= min(self.scm.thresholds)
+            norm_thresh = [2*(t-min_t)/(max_t-min_t)-1 if (max_t-min_t) != 0 else 0 for t in self.scm.thresholds]
+            metrics.append(norm_thresh)
+            #toc = time.perf_counter()
+            #print('thresholds: ', toc - tic)
 
         # A = np.asarray(nx.adjacency_matrix(self.net).todense())
         # for row in A:
@@ -181,8 +191,11 @@ class NetworkCascEnv(gym.Env):
                 return self.get_obs()
         self.episode = 1
         if self.network_type == 'SF':
-            _,self.net = create_random_nets('',self.net_size,num2gen=1,show=False)
-            self.scm = SCM(self.net)
+            comm_net,self.net = create_random_nets('',self.net_size,num2gen=1,show=False)
+            if self.cascade_type == 'coupled':
+                self.scm = SCM(self.net,cascade_type=self.cascade_type,comm_net=comm_net)
+            else:
+                self.scm = SCM(self.net,cascade_type=self.cascade_type)
             return self.get_obs()
         elif self.network_type == 'File':
             if not isinstance(self.filename,str):

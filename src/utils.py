@@ -7,14 +7,23 @@ import random
 K = 2.422
 RANDOM_REWIRE_PROB = 0.0
 
-def create_random_nets(save_dir,num_nodes,num2gen=10,show=False):  
-    import random
-    random.seed(np.random.randint(10000))
+def create_random_nets(save_dir,num_nodes,num2gen=10,gen_threshes=False,show=False):  
+    #import random
+    #random.seed(np.random.randint(10000))
     for i in range(num2gen):
         [network_a, network_b] = create_networks('SF',num_nodes=num_nodes)
         if save_dir != '':
             f = save_dir + 'net_{}.edgelist'.format(i)
             nx.write_edgelist(network_b,f)
+            if gen_threshes:
+                thresholds = []
+                for node in network_b.nodes():
+                    thresh = 1/len(network_b[node])*np.random.choice([i for i in range(1,len(network_b[node])+1)])
+                    thresholds.append(thresh)
+                ft = save_dir + 'net_{}_thresh.npy'.format(i)
+                np.save(ft,np.asarray(thresholds))
+                #print(f'Saved to {ft}')
+
     if show:
         print('Showing one of the generated networks')
         import matplotlib.pyplot as plt
@@ -22,7 +31,7 @@ def create_random_nets(save_dir,num_nodes,num2gen=10,show=False):
         plt.draw()
         plt.show()
     return [network_a,network_b]
-
+    
 def make_comms(network_b, copy,num_nodes=None):
     if num_nodes is None:
         print("Num nodes not specified")

@@ -1,5 +1,5 @@
 import networkx as nx
-#from generate_networks import create_random_nets
+from networkx.algorithms.centrality import degree_centrality
 from scm import SCM
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,6 +10,9 @@ class Counterfactual_Cascade_Fns():
 		if self.env.scm.cascade_type == 'shortPath':
 			self.deltaL = np.zeros([self.env.scm.G.number_of_nodes(),self.env.scm.G.number_of_nodes()])
 			self.L = np.zeros(self.deltaL.shape[0])
+		elif self.env.scm.cascade_type == 'coupled':
+			self.deltaDp = np.zeros([self.env.scm.G.number_of_nodes(),self.env.scm.G.number_of_nodes()])
+			self.deltaDc = np.zeros([self.env.scm.comm_net.number_of_nodes(),self.env.scm.comm_net.number_of_nodes()]) 
 		self.casc_type = self.env.scm.cascade_type
 
 	def generate_data(self,num2gen,fail_size):
@@ -70,11 +73,11 @@ class Counterfactual_Cascade_Fns():
 					l0 = self.env.scm.loads
 					for n in [f1_init,f2_init]:
 						solo_fail_set = self.env.scm.check_cascading_failure([n])
-						self.env.scm.reset()
 						if np.array_equal(self.deltaL[n],np.zeros_like(self.deltaL[n])):
 							self.L[n] = np.sum([l0[f] for f in solo_fail_set])-len(solo_fail_set)*(len(l0)-1)
 							lf = self.env.scm.loads
 							self.deltaL[n] = lf - l0
+						self.env.scm.reset()
 						found_fails = [v for v in solo_fail_set if v in unsure_fail_set]
 						for f in found_fails:
 							if f in f1[-1] and n == f1_init: 
@@ -99,6 +102,50 @@ class Counterfactual_Cascade_Fns():
 								indep = False
 					if indep:
 						indep_sets.append([k1,k2])
+		elif self.casc_type == 'coupled':
+			f1_inits.remove(-1)
+			f2_inits.remove(-1)
+			for i,k1 in enumerate(f1_inits):
+				if k1 in f2_inits: continue
+				for j,k2 in enumerate(f2_inits):
+					if k2 in f1_inits: continue
+					f1_init = f1_inits[i]
+					f2_init = f2_inits[j]
+					f1_fail_set = f1[f1_init]
+					f2_fail_set = f2[f2_init]
+					unsure_fail_set = f1[-1] + f2[-1]
+				dp0 = self.env.scm.dp
+				dc0 = self.env.scm.dc
+				for n in [f1_init,f2_init]:
+					solo_fail_set = self.env.scm.check_cascading_failure([n])	
+					dpf = self.env.scm.dp
+					dcf = self.env.scm.dc
+					if np.array_equal(self.deltaDp[n],np.zeros_like(self.deltaDp[n])):
+						self.deltaDp[n] = dpf - dp0
+						self.deltaDc[n] = dcf - dc0
+					self.env.scm.reset()
+					found_fails = [v for v in solo_fail_set if v in unsure_fail_set]
+					for f in found_fails:
+						if f in f1[-1] and n == f1_init: 
+							f1[f1_init].append(f)
+							f1[-1].remove(f)
+						if f in f2[-1] and n == f2_init: 
+							f2[f2_init].append(f)
+							f2[-1].remove(f)
+				if set(f2_fail_set).issubset(set(f1_fail_set)) or set(f1_fail_set).issubset(set(f2_fail_set)):
+					#print(f'One of these should be a subset of the other: {f1_fail_set},{f2_fail_set}')
+					continue
+				if any([f not in f1[f1_init]+f2[f2_init] for f in unsure_fail_set]):
+					#print(f'element in {unsure_fail_set} not found in {f1[f1_init]+f2[f2_init]}')
+					#print(f'f1: {f1}, f2: {f2}')
+					continue
+				indep = True
+				for n in self.env.scm.G.nodes():
+					if n not in f1_fail_set or f2_fail_set: 
+						if  dp0 + self.detlaDp[f1_init,n] + self.deltaDp[f2_init,n] < 0 or dc0 + self.detlaDc[f1_init,n] + self.deltaDc[f2_init,n] < 0:
+							indep = False						
+				if indep:
+					indep_sets.append([k1,k2])				
 		else: 
 			print(f'Error: Cascade Type {self.casc_type} is not recognized')
 			exit()
@@ -113,70 +160,14 @@ class Counterfactual_Cascade_Fns():
 
 
 if __name__ == '__main__':
-	from couplednetworks_gym_cfa import SimpleCascadeEnv, create_random_nets
-	num_nodes = 100
-	env = SimpleCascadeEnv(num_nodes,0.1,0.1,'SF',degree=1,cascade_type='shortPath')
-	comm_net,pow_net = create_random_nets('',num_nodes,num2gen=1,show=False)
+	from src.netcasc_gym_env import NetworkCascEnv
+	from src.utils import create_random_nets
+	num_nodes = 10
+	env = NetworkCascEnv(num_nodes,0.1,0.1,'SF',degree=1,cascade_type='coupled')
 	ccf = Counterfactual_Cascade_Fns(env)
 
 	casc2gen = 1
 	initial_failures, failure_sets = ccf.generate_data(casc2gen,2)
-	CCs = ccf.get_failure_component([[0,1]])
 	counterfac_init_fails = []
 	counterfac_casc_fails = []
 	fac_cfac_casc_fails = []
-	print(initial_failures)
-	print('\n')
-	print(CCs)
-	print('\n')
-	exit()
-
-	for i,f1 in enumerate(CCs):
-		for j,f2 in enumerate(CCs):
-			if i>=j:
-				continue
-			for k,cc1 in enumerate(f1):
-				for m,cc2 in enumerate(f2):
-					extra = 0
-					if check_component_independence(cc1,cc2,scm):
-						# print(i)
-						# print(j)
-						cfail = []
-						for f in initial_failures[i]:
-							if f in cc1:
-								cfail.append(f)
-						for f in initial_failures[j]:
-							if f in cc2 and f not in cc1:
-								cfail.append(f)
-						counterfac_init_fails.append(sorted(cfail))
-						counterfac_casc_fails.append(sorted(list(set(cc1) | set(cc2))))
-						fcl = len(cc1+cc2)
-						scl = len(set(cc1+cc2))
-
-						if fcl > scl:
-							extra +=1
-						fac_cfac_casc_fails.append(sorted(scm.check_cascading_failure(initial_failures=cfail)))
-						scm.reset()
-						if counterfac_casc_fails[-1] != fac_cfac_casc_fails[-1]:
-							print('Initial: ', sorted(cfail))
-							print('Cascade 1: ',sorted(cc1))
-							print('Cascade 2: ',sorted(cc2))
-							print(f'Full Combined Length {fcl}: {cc1 + cc2}')
-							print(f'Set Combined Length {scl}: {set(cc1 + cc2)}')
-							print('CFactual: ', counterfac_casc_fails[-1])
-							print('Factual: ', fac_cfac_casc_fails[-1])
-							nx.draw(scm.G,with_labels=True)
-							plt.draw()
-							plt.show()
-	print(f'Total of {len(counterfac_casc_fails)} examples generated from {num2gen} factual examples')
-	print(f'{extra} Extra samples by allowing overlap in factual samples')
-	# for i,f in enumerate(counterfac_init_fails):
-	# 	print('Initial: ',f,'\n')
-	# 	print('Factual: ',fac_cfac_casc_fails[i],'\n')
-	# 	print('CFactual: ',counterfac_casc_fails[i],'\n')
-	# 	print('--------------------------')
-
-	# nx.draw(scm.G,with_labels=True)
-	# plt.draw()
-	# plt.show()
-	# exit()
