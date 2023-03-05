@@ -65,7 +65,8 @@ class MARL(TrainableAgent, MAS):
         self.utils = utils
         self.last_policies = None
         self.init_writer(log_dir)
-        self.writer.add_hparams(hparams,{})
+        #reduced_hparams = {'lr': hparams['learning_rate'],'bs': hparams['batch_size']}
+        self.writer.add_hparams(hparams,{'dummy/dummy': 0},run_name=None)#'hparams')
         self.explt_opp_update_freq = 1000
         self.degree = [ag.degree for ag in agents_list]
         self.exploited = 'None'
