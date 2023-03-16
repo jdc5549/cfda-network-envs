@@ -3,7 +3,7 @@ import numpy as np
 import networkx as nx
 import time
 import os
-from src.utils import create_random_nets, ncr
+from utils import create_random_nets, ncr
 
 def get_nash_eqs(env):
     num_nodes_attacked = env.num_nodes_attacked
@@ -42,9 +42,24 @@ def get_nash_eqs(env):
     U = np.array(U,dtype=float)
     return eqs, U
 
+def _gen_utils_eqs(fnci):
+    fn = fnci[0]
+    c = fnci[1]
+    i = fnci[2]
+    if args.env_type == 'NetworkCascEnv':
+        env = NetworkCascEnv(args.num_nodes,args.p,args.p,'File',filename = fn,cascade_type=c)
+    else:
+        print(f'Environment type {args.env_type} is not supported')
+    eqs,U = get_nash_eqs(env)
+    f_eq = args.nash_eqs_dir + f'{c}Casc_eq_{i}.npy'
+    np.save(f_eq,eqs)
+    f_util = args.nash_eqs_dir + f'{c}Casc_util_{i}.npy'
+    np.save(f_util,U)
+
 if __name__ == '__main__':
     import argparse
-    from src.main import NetworkCascEnv
+    from main import NetworkCascEnv
+    import multiprocessing as mp
 
     parser = argparse.ArgumentParser(description='Network Generation Args')
     parser.add_argument("--num_nodes",type=int,default=100)
@@ -70,6 +85,7 @@ if __name__ == '__main__':
     if args.nash_eqs_dir is not None:
         if args.nash_eqs_dir[-1] != '/':
             args.nash_eqs_dir += '/'
+        args.nash_eqs_dir = args.nash_eqs_dir + f'SF_{args.num_nodes}n_2.422deg_{args.env_type}_p{args.p}_{args.cascade_type}Casc_{args.num2gen}nets/'
         if not os.path.isdir(args.nash_eqs_dir):
             os.mkdir(args.nash_eqs_dir)
         tic = time.perf_counter()
@@ -78,17 +94,13 @@ if __name__ == '__main__':
         else: casc = [args.cascade_type]
         if casc not in Cascade_Types:
             print(f'Unrecognized Cascade Type in {casc}. Recognized Cascade Types are {Cascade_Types}.')
+        f_args = []
         for c in casc:
             for i,f in enumerate(files):
-                if args.env_type == 'NetworkCascEnv':
-                    env = NetworkCascEnv(args.num_nodes,args.p,args.p,'File',filename = os.path.join(full_dir,f),cascade_type=c)
-                else:
-                    print(f'Environment type {args.env_type} is not supported')
-                    exit()
-                eqs,U = get_nash_eqs(env)
-                f_eq = args.nash_eqs_dir + f'{c}Casc_eq_{i}.npy'
-                np.save(f_eq,eqs)
-                f_util = args.nash_eqs_dir + f'{c}Casc_util_{i}.npy'
-                np.save(f_util,U)
-            toc = time.perf_counter()
+                f_args.append((os.path.join(full_dir,f),c,i))
+        with mp.Pool(processes=min([len(f_args),mp.cpu_count()-2])) as pool:
+            pool.map(_gen_utils_eqs, f_args)
+        pool.close()
+
+        toc = time.perf_counter()
         print(f"Completed in {toc - tic:0.4f} seconds")
