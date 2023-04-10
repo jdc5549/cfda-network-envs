@@ -5,6 +5,7 @@ from marl.tools import gymSpace2dim,get_combinatorial_actions
 from marl.experience import make
 from ..experience import ReplayMemory, transition_tuple
 from cascade_cfa import Counterfactual_Cascade_Fns
+from graph_embedding import get_featurized_obs
 
 import copy
 import random
@@ -32,7 +33,7 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 	:param name: (str) The name of the agent	  
 	"""
 	
-	def __init__(self, qmodel,observation_space, my_action_space, other_action_space,fact_experience,cfact_experience,env,training_epochs,topo_eps,act_degree=1, index=None, mas=None, exploration="EpsGreedy", gamma=0.99, lr=0.1,sched_step=100e3,sched_gamma=0.1,batch_size=32, tau=1., target_update_freq=1000, name="MultiDQNCriticAgent",train=True,model=None):
+	def __init__(self, qmodel,embed_model,observation_space, my_action_space, other_action_space,fact_experience,cfact_experience,env,training_epochs,topo_eps,act_degree=1, index=None, mas=None, exploration="EpsGreedy", gamma=0.99, lr=0.1,sched_step=100e3,sched_gamma=0.1,batch_size=32, tau=1., target_update_freq=1000, name="MultiDQNCriticAgent",train=True,model=None):
 		self.topo_eps = topo_eps
 		self.episode = 0
 		self.topo = 0
@@ -53,6 +54,7 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 		assert self.fact_experience.capacity >= self.batch_size
 		if hasattr(self,'cfact_experience'):
 			assert self.cfact_experience.capacity >= self.batch_size
+		self.embed_model = embed_model
 
 	def store_experience(self,*args,f='fact'):
 		"""
@@ -169,6 +171,8 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 					d = np.random.choice([a for a in range(self.env.scm. G.number_of_nodes()) if a not in cfac_atk_action])
 					cfac_def_action.append(d)
 				cfac_action = [cfac_atk_action,cfac_def_action]
+				# if cfac_action in fac_actions:
+				# 	continue
 				cfac_init_fail = cfac_atk_action #[n for n in cfac_atk_action if n not in cfac_def_action]
 				for f in idp:
 					if f in new_failure_component.keys():
@@ -271,7 +275,6 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 		# if len(self.cfact_experience) > 0 and t % debug_print_step == 0:
 		# 	print(f'Cfact Buffer Length {len(self.cfact_experience)}. Training for {epochs} epochs.')
 		# 	print(f'Fact Buffer Length {len(self.fact_experience)}')
-
 		for i in range(epochs):
 			if mr >= 1:
 				batch = self.fact_experience.sample(self.batch_size)
@@ -279,11 +282,16 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 				batch = self.cfact_experience.sample(self.batch_size)
 			else:
 				# print('mixing ratio: ', mr)
-				#print('len fac buffer: ',len(self.fact_experience))
-				#print('len cfac buffer: ',len(self.cfact_experience))
+				# print('len fac buffer: ',len(self.fact_experience))
+				# print('len cfac buffer: ',len(self.cfact_experience))
 				# print('------------------------------------\n')
 				fac_batch = self.fact_experience.sample(int(self.batch_size*mr))
-				cfac_batch = self.cfact_experience.sample(self.batch_size - int(self.batch_size*mr))				   
+				cfac_batch = self.cfact_experience.sample(self.batch_size - int(self.batch_size*mr))
+				collisions = 0
+				for a in cfac_batch.action:
+					if a in fac_batch.action:
+						collisions += 1
+				#print('Cfac/fac collsions: ', collisions)
 				batch = {'observation':[], 'action':[], 'reward':[], 'next_observation':[], 'done_flag':[],'info':{'init_fail': [], 'fail_set':[]}}
 				for key in batch.keys():
 					if key == 'info': 
@@ -295,6 +303,7 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 						batch[key] += getattr(fac_batch,key)
 						batch[key] += getattr(cfac_batch,key)
 				batch = transition_tuple['FFTransition'](**batch)
+
 			#if len(batch.observation)%self.batch_size != 0:
 				# print('mixing ratio: ', mr)
 				# print('len fac buffer: ',len(self.fact_experience))
@@ -335,10 +344,34 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 			# for j,a in enumerate(batch.action):
 			# 	if a[0] == a[1]:
 			# 		idxs.append(j)
+
 			target_value = self.target(curr_policy.Q, batch).float()
 			# # Compute current value Q(s_t, a_t)
 			#tic = time.perf_counter()
-			curr_value = self.value(batch.observation, batch.action)
+			batch_feat_obs = get_featurized_obs(batch.observation,embed_model=self.embed_model)
+			# try:
+			# 	print(torch.norm(batch_feat_obs - self.copy_batch_obs))
+			# except:
+			# 	pass
+			self.copy_batch_obs = batch_feat_obs.clone().detach()
+			curr_value = self.value(batch_feat_obs, batch.action)
+			# from torchviz import make_dot
+			# make_dot(curr_value).render('viz/curr_value_detach_action',format='png')
+
+			##############DEBUGGING#######################################
+			# if t % 100 == 0:
+			# 	print(f'Update Model at time {t}')
+			# 	ids = batch.info['env_id']
+			# 	err_by_id = [[] for j in range(11)]
+			# 	mse = torch.abs(target_value - curr_value).detach().numpy()
+			# 	for j,err in enumerate(mse):
+			# 		err_by_id[ids[j]].append(err[0])
+			# 	for j,errs in enumerate(err_by_id):
+			# 		if len(errs) > 0:
+			# 			print(f'Mean Error for env {j} with {len(errs)} data: {np.mean(errs)}')
+			# 		else:
+			# 			print(f'No Data for env {j}')
+			##############################################################
 			#toc = time.perf_counter()
 			#print(f'Calculate Value time: {toc-tic}')
 			#print(f'Reward: {target_value[0].detach().numpy()}, Pred: {curr_value[0].detach().numpy()}')
@@ -348,6 +381,7 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 			if self.off_policy and t % self.target_update_freq==0:
 				self.update_target_model()
 			critic_mse.append(torch.norm(target_value - curr_value,p=1).detach().cpu().numpy()/target_value.shape[0])
+
 		#print(f'Average time per epoch {total/epochs}')
 		#print(f'Batch norm time per epoch {total/(epochs*self.batch_size)}')
 

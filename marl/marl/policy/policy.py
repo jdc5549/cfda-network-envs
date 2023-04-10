@@ -29,6 +29,7 @@ class Policy(object):
                 while a in actions:
                     a = self.action_space.sample()
                 actions.append(self.all_actions[a])
+            actions.sort()
             return actions
         # else:
         #     actions_list = []

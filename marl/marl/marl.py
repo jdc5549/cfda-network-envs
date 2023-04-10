@@ -57,7 +57,7 @@ class MARL(TrainableAgent, MAS):
     :param agents_list: (list) The list of agents in the MARL model
     :param name: (str) The name of the system
     """
-    def __init__(self, agents_list=[],name='marl', log_dir="logs",nash_policies=None,utils=None,act_degree=1):
+    def __init__(self,agents_list=[],name='marl', log_dir="logs",nash_policies=None,utils=None,act_degree=1,hparams = {}):
         MAS.__init__(self, agents_list=agents_list, name=name)
         self.experience = marl.experience.make("ReplayMemory", capacity=10000)
         self.log_dir = log_dir
@@ -65,6 +65,8 @@ class MARL(TrainableAgent, MAS):
         self.utils = utils
         self.last_policies = None
         self.init_writer(log_dir)
+        #reduced_hparams = {'lr': hparams['learning_rate'],'bs': hparams['batch_size']}
+        self.writer.add_hparams(hparams,{'dummy/dummy': 0},run_name=None)#'hparams')
         self.explt_opp_update_freq = 1000
         self.degree = [ag.degree for ag in agents_list]
         self.exploited = 'None'
@@ -118,7 +120,7 @@ class MARL(TrainableAgent, MAS):
     def get_agent_policies(self,observation):
         policies = []
         vals = []
-        t_obs = torch.tensor(observation).float()
+        t_obs = observation.clone().detach().float()
         if self.agents[0].degree > 1:
             feat_actions = torch.stack([t_obs[action].flatten() for action in self.agents[0].all_actions]).float()
         else:
@@ -138,15 +140,15 @@ class MARL(TrainableAgent, MAS):
         
     def action(self, observation,num_actions=1):
         actions = []
-        for ag, obs in zip(self.agents,observation):
+        for ag in self.agents:
             if ag.train:
-                actions.append(ag.action(obs))
+                actions.append(ag.action(observation))
             else:
-                actions.append(ag.greedy_action(obs))
+                actions.append(ag.greedy_action(observation))
         return actions
         
     def greedy_action(self, observation,num_actions=1):
-        return [ag.greedy_action(obs,num_actions=num_actions) for ag, obs in zip(self.agents, observation)]
+        return [ag.greedy_action(observation,num_actions=num_actions) for ag in self.agents]
     
     def save_policy(self, folder='.', filename='', timestep=None):
         """

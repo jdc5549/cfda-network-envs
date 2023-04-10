@@ -65,7 +65,7 @@ class ReplayMemory(Experience):
         for ind in index:
             _sample.append(self.memory[ind])
         _sample = list(zip(*_sample))
-        sample_arr = [np.asarray(s) for s in _sample]
+        sample_arr = [np.asarray(s) for s in _sample] # if not hasattr(s,'requires_grad') else s.detach().numpy()]
         # sample_arr = [torch.from_numpy(np.asarray(s)).float() for s in _sample]
         return transition_tuple[self.transition_type](*sample_arr)
     

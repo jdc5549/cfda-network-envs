@@ -202,11 +202,13 @@ class DQNAgent(QAgent):
         self.tau = tau
         if self.off_policy:
             self.target_policy.Q.eval()
-            
+
     def update_q(self, curr_value, target_value, batch,sched_step=True):
         self.optimizer.zero_grad()
         loss = self.criterion(curr_value, target_value)
-        #try:
+
+        # from torchviz import make_dot
+        # make_dot(loss).render(f'viz/loss',format='png')
         loss.backward()
 
         # except:
@@ -355,9 +357,9 @@ class MinimaxDQNCriticAgent(DQNAgent,MATrainable):
         target_value = my_rew
         return target_value.unsqueeze(1).detach()
         
-    def value(self, observation, actions):
-        t_observation = torch.stack([torch.tensor(obs[self.index]).float() for obs in observation]) #same for both players so no need to distinguish
-        p1_actions = [a[0] for a in actions]
+    def value(self, observation_batch, action_batch):
+        t_observation = torch.cat([obs.unsqueeze(0) for obs in observation_batch])#torch.stack([obs[self.index].clone().detach().float() for obs in observation]) #same for both players so no need to distinguish
+        p1_actions = [a[0] for a in action_batch]
         if type(p1_actions[0]) == list:
             num_samples = int(len(p1_actions[0])/self.degree)
         else:
@@ -366,7 +368,7 @@ class MinimaxDQNCriticAgent(DQNAgent,MATrainable):
         #print('len p1 actions: ',len(p1_actions))
         p1_feat_actions = []
         for i,a in enumerate(p1_actions):
-            acts = t_observation[i,a]
+            acts = t_observation[i,a].detach()
             if self.degree > 1:
                 #end_idx = len(acts)-self.degree if len(acts) >= self.degree else len(acts)
                 for j in range(0,len(acts),self.degree):
@@ -378,7 +380,7 @@ class MinimaxDQNCriticAgent(DQNAgent,MATrainable):
         else:
             t_action_p1 = torch.cat(p1_feat_actions)
         #print('t_action_p1 shape: ', t_action_p1.shape)
-        p2_actions = [a[1] for a in actions]
+        p2_actions = [a[1] for a in action_batch]
         if type(p2_actions[0]) == list:
             num_samples = int(len(p2_actions[0])/self.degree)
         else:
@@ -386,7 +388,7 @@ class MinimaxDQNCriticAgent(DQNAgent,MATrainable):
             p2_actions = [self.all_actions[a] for a in p2_actions]
         p2_feat_actions = []
         for i,a in enumerate(p2_actions):
-            acts = t_observation[i,a]
+            acts = t_observation[i,a].detach()
             if self.degree > 1:
                 for j in range(0,len(acts),self.degree):
                     p2_feat_actions.append(torch.cat([acts[k] for k in range(j,j+self.degree)]))
@@ -411,6 +413,10 @@ class MinimaxDQNCriticAgent(DQNAgent,MATrainable):
                 value[i] = torch.mean(avg_q)
             return value.unsqueeze(1)
         else:
+            # from torchviz import make_dot
+            # make_dot(t_observation).render('viz/t_observation',format='png')
+            # make_dot(t_action_p1).render('viz/t_action_p1',format='png')
+            # make_dot(t_action_p2).render('viz/t_action_p2',format='png')
             return self.policy.Q(t_observation,t_action_p1,t_action_p2)
 
 class ContinuousDQNAgent(DQNAgent):

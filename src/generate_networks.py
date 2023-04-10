@@ -1,56 +1,12 @@
 import pygambit as gambit
 import numpy as np
-from couplednetworks import create_networks
 import networkx as nx
 import time
 import os
+from utils import create_random_nets, ncr
 
-
-def ncr(n, r):
-    import operator as op
-    from functools import reduce
-    r = min(r, n-r)
-    numer = reduce(op.mul, range(n, n-r, -1), 1)
-    denom = reduce(op.mul, range(1, r+1), 1)
-    return numer // denom  # or / in Python 2
-
-def create_random_nets(save_dir,num_nodes,num2gen=10,gen_threshes=False,show=False):  
-    #import random
-    #random.seed(np.random.randint(10000))
-    for i in range(num2gen):
-        [network_a, network_b] = create_networks('SF',num_nodes=num_nodes)
-        if save_dir != '':
-            f = save_dir + 'net_{}.edgelist'.format(i)
-            nx.write_edgelist(network_b,f)
-            if gen_threshes:
-                thresholds = []
-                for node in network_b.nodes():
-                    thresh = 1/len(network_b[node])*np.random.choice([i for i in range(1,len(network_b[node])+1)])
-                    thresholds.append(thresh)
-                ft = save_dir + 'net_{}_thresh.npy'.format(i)
-                np.save(ft,np.asarray(thresholds))
-                #print(f'Saved to {ft}')
-
-    if show:
-        print('Showing one of the generated networks')
-        import matplotlib.pyplot as plt
-        nx.draw(network_b,with_labels=True)
-        plt.draw()
-        plt.show()
-    return [network_a,network_b]
-
-def create_simple_random_nets():
-    random.seed(np.random.randint(0,10000))
-    net = nx.Graph()
-    nodes = [0,1,2]
-    net.add_nodes_from(nodes)
-    double_node = random.sample(nodes,1)[0]
-    single_nodes = nodes.copy()
-    single_nodes.remove(double_node)
-    net.add_edges_from([(single_nodes[0],double_node),(double_node,single_nodes[1])])
-    return [net,net]
-
-def get_nash_eqs(env):
+def get_nash_eqs(env,env_id,cascade_type):
+    progress_step = 0.10
     num_nodes_attacked = env.num_nodes_attacked
     net_size = env.net_size
     num_actions = ncr(net_size,num_nodes_attacked)
@@ -69,15 +25,21 @@ def get_nash_eqs(env):
                 for j in range(i,num_nodes_attacked):
                     curr_action[j] = curr_action[j-1]+1
         all_actions.append(curr_action.copy())
-    print('Caculating Ultility Matrix of size {}'.format(num_actions*num_actions))
+    print(f'Env {env_id} {cascade_type} Casc: Caculating Ultility Matrix of size {num_actions*num_actions}')
+    count = 0
+    last_print = 0
     for i in range(num_actions):
         for j in range(num_actions):
             node_lists = [all_actions[i],all_actions[j]]
             last_rew = 0
             _,reward,_,_ = env.step(node_lists)
             U[i,j] = gambit.Rational(reward[0])
+            count += 1
+            if (count - last_print)/(num_actions*num_actions) >= 0.1:
+                print(f'Env {env_id} {cascade_type} Casc: {round(count/(num_actions*num_actions)*100,2)}% of Utility Matrix Calculated')
+                last_print = count
     #U = U.astype(gambit.Rational)
-    print('Caculating Nash Eqs')
+    print(f'Env {env_id} {cascade_type} Casc: Caculating Nash Eqs')
     g = gambit.Game.from_arrays(U,-U)
     g.players[0].label = 'Attacker'
     g.players[1].label = 'Defender'
@@ -85,12 +47,28 @@ def get_nash_eqs(env):
     eqs = np.array(eqs,dtype=float)
     eqs = np.reshape(eqs,(2,num_actions))
     U = np.array(U,dtype=float)
+    print(f'Env {i} {c} Casc: Done.')
     return eqs, U
+
+def _gen_utils_eqs(fnci):
+    fn = fnci[0]
+    c = fnci[1]
+    i = fnci[2]
+    if args.env_type == 'NetworkCascEnv':
+        env = NetworkCascEnv(args.num_nodes,args.p,args.p,6,'File',filename=fn,cascade_type=c)
+    else:
+        print(f'Environment type {args.env_type} is not supported')
+    eqs,U = get_nash_eqs(env,i,c)
+    f_eq = args.nash_eqs_dir + f'{c}Casc_eq_{i}.npy'
+    np.save(f_eq,eqs)
+    f_util = args.nash_eqs_dir + f'{c}Casc_util_{i}.npy'
+    np.save(f_util,U)
 
 if __name__ == '__main__':
     import argparse
-    from couplednetworks_gym_main import CoupledNetsEnv2
-    from couplednetworks_gym_cfa import SimpleCascadeEnv
+    from main import NetworkCascEnv
+    import multiprocessing as mp
+
     parser = argparse.ArgumentParser(description='Network Generation Args')
     parser.add_argument("--num_nodes",type=int,default=100)
     parser.add_argument("--num2gen",type=int,default=10)
@@ -100,7 +78,7 @@ if __name__ == '__main__':
     parser.add_argument("--env_type", default='NetworkCascEnv',help='What type of gym environment should be used to generate the NashEQ utility')
     parser.add_argument("--cascade_type", default='all', help='What type of cascading to use to get utility.')
     args = parser.parse_args()
-    Cascade_Types = ['threshold','shortPath']
+    Cascade_Types = ['threshold','shortPath','coupled']
 
     if args.net_save_dir[-1] != '/':
         args.net_save_dir += '/'
@@ -115,6 +93,7 @@ if __name__ == '__main__':
     if args.nash_eqs_dir is not None:
         if args.nash_eqs_dir[-1] != '/':
             args.nash_eqs_dir += '/'
+        args.nash_eqs_dir = args.nash_eqs_dir + f'SF_{args.num_nodes}n_2.422deg_{args.env_type}_p{args.p}_{args.cascade_type}Casc_{args.num2gen}nets/'
         if not os.path.isdir(args.nash_eqs_dir):
             os.mkdir(args.nash_eqs_dir)
         tic = time.perf_counter()
@@ -123,19 +102,13 @@ if __name__ == '__main__':
         else: casc = [args.cascade_type]
         if casc not in Cascade_Types:
             print(f'Unrecognized Cascade Type in {casc}. Recognized Cascade Types are {Cascade_Types}.')
+        f_args = []
         for c in casc:
             for i,f in enumerate(files):
-                if args.env_type == 'NetworkCascEnv':
-                    env = NetworkCascEnv(args.num_nodes,args.p,args.p,'File',filename = os.path.join(full_dir,f),cascade_type=c)
-                elif args.env_type == 'CoupledNetsEnv2':
-                    env = CoupledNetsEnv2(args.num_nodes,args.p,args.p,'File',filename = os.path.join(full_dir,f))
-                else:
-                    print(f'Environment type {args.env_type} is not supported')
-                    exit()
-                eqs,U = get_nash_eqs(env)
-                f_eq = args.nash_eqs_dir + f'{c}Casc_eq_{i}.npy'
-                np.save(f_eq,eqs)
-                f_util = args.nash_eqs_dir + f'{c}Casc_util_{i}.npy'
-                np.save(f_util,U)
-            toc = time.perf_counter()
+                f_args.append((os.path.join(full_dir,f),c,i))
+        with mp.Pool(processes=min([len(f_args),mp.cpu_count()-2])) as pool:
+            pool.map(_gen_utils_eqs, f_args)
+        pool.close()
+
+        toc = time.perf_counter()
         print(f"Completed in {toc - tic:0.4f} seconds")

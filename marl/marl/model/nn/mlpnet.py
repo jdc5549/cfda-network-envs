@@ -147,6 +147,48 @@ class MultiCriticMlp(nn.Module):
         #     for i,a in enumerate(p1_act):
         #         if a[0] == p2_act[i][0]:
         #             idxs.append(i)
+        obs = obs.to(torch.float32)
+        p1_act = p1_act.to(torch.float32)
+        p2_act = p2_act.to(torch.float32)
+
+        obs_h = self.obs_hidden_layer(obs)
+        p1_h = self.p1_hidden_layer(p1_act)
+        p2_h = self.p2_hidden_layer(p2_act)
+        # Concat obs and actions
+        x = torch.cat((obs_h,p1_h,p2_h),-1)
+        x = F.relu(x)
+        x = self.all_hidden_layer(x)
+        x = F.relu(x)
+        outputs = self.output_layer(x)
+        # if len(obs.shape) > 1:
+        #     print([outputs[i].item() for i in idxs])
+        #     exit()
+        return outputs
+
+class MultiActorCriticMlp(nn.Module):
+    def __init__(self, obs_sp, p1_act_sp,p2_act_sp,hidden_size=64):
+        super(MultiCriticMlp, self).__init__()
+        hidden = hidden_size
+        self.obs_hidden_layer = nn.Linear(obs_sp,hidden)
+        self.p1_hidden_layer = nn.Linear(p1_act_sp,hidden)
+        self.p2_hidden_layer = nn.Linear(p2_act_sp,hidden)
+        self.all_hidden_layer = nn.Linear(3*hidden,hidden)
+        self.critic_output_layer = nn.Linear(hidden,1)
+        self.actor1_output_layer = nn.Linear(hidden,p1_act_sp)
+        self.actor2_output_layer = nn.Linear(hidden,p2_act_sp)    
+
+    def reset_parameters(self):
+        for lay in [self.obs_hidden_layer, self.p1_hidden_layer,self.p2_hidden_layer]:
+            if isinstance(lay, nn.Linear):
+                lay.weight.data.uniform_(*hidden_init(lay))
+        self.output_layer.weight.data.uniform_(-3e-3, 3e-3)
+         
+    def forward(self,obs,p1_act,p2_act):
+        # if len(obs.shape) > 1:
+        #     idxs = []
+        #     for i,a in enumerate(p1_act):
+        #         if a[0] == p2_act[i][0]:
+        #             idxs.append(i)
         obs_h = self.obs_hidden_layer(obs)
         p1_h = self.p1_hidden_layer(p1_act)
         p2_h = self.p2_hidden_layer(p2_act)
