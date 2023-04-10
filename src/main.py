@@ -83,6 +83,7 @@ if __name__ == '__main__':
     else:
         torch.set_default_tensor_type('torch.FloatTensor')
         print('Using Device: cpu')
+    args = parser.parse_args()
     if args.nash_eqs_dir is not None:
         fns = [f for f in os.listdir(args.nash_eqs_dir)]
         fns.sort()
@@ -95,7 +96,6 @@ if __name__ == '__main__':
     else:
         eqs = None
         utils = None
-
     # if args.discrete_obs:
     #     obs_sp = spaces.Discrete(len(self.filename))
     #     net_feature_size = 1

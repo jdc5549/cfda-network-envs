@@ -2,7 +2,7 @@ import networkx as nx
 import generate_networks as gn
 import numpy as np
 import matplotlib.pyplot as plt
-from src.utils import create_random_nets
+from utils import create_random_nets
 class SCM():
 	def __init__(self,G, cascade_type='threshold',comm_net=None,thresholds=None):
 		self.G = G

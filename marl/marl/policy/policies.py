@@ -323,8 +323,6 @@ class MinimaxQCriticPolicy(ModelBasedPolicy):
         # mutliproc_toc = time.perf_counter()
         # print(f'multi proc get Umat: {mutliproc_toc-multiproc_tic} seconds')
         # exit()
-
-
         if self.player == 0:
             U_calc = -U.T #LP package requires the player to be the column player
         else:
