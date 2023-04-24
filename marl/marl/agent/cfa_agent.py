@@ -128,14 +128,15 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 				self.init_fails = []
 				self.episode = 0
 				self.topo += 1
-			#print('self.fail_components: ',self.fail_components[-1])
-			#print('self.init_fails: ',self.init_fails)
+			# print('self.fail_components: ',self.fail_components[-1])
+			# print('self.init_fails: ',self.init_fails)
 
 	def gen_cfs(self,new_failure_component,init_fail_new,experience):
-		#print(f'Start indx = {self.topo*self.topo_eps}')
-		#print(f'End indx: {self.fact_experience.__len__()-1}')
-		fac_actions = self.fact_experience.get_transition([i for i in range(self.topo*self.topo_eps,self.fact_experience.__len__()-1)]).action
-		fac_info = self.fact_experience.get_transition([i for i in range(self.topo*self.topo_eps,self.fact_experience.__len__()-1)]).info
+		# print(f'Start indx = {self.topo*self.topo_eps}')
+		# print(f'End indx: {self.fact_experience.__len__()-1}')
+		fac_transitions = self.fact_experience.get_transition([i for i in range(self.topo*self.topo_eps,self.fact_experience.__len__()-1)])
+		fac_actions = fac_transitions.action
+		fac_info = fac_transitions.info
 		# print('fac actions: ',fac_actions)
 		# print('old_CCs:',self.CCs)
 		# print('new_CCs:',CCs_new)
@@ -210,8 +211,8 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 					print('counterfac_casc_fail: ', counterfac_casc_fail)
 					print('fac_cfac_casc_fail: ',fac_cfac_casc_fail)
 					exit()
-				# if cfac_init_fail == init_fail_new or cfac_init_fail == self.init_fails[i]:
-					# 	continue
+				if cfac_init_fail == init_fail_new or cfac_init_fail == self.init_fails[i]:
+						continue
 				r = len(counterfac_casc_fail)/self.env.scm.G.number_of_nodes()
 				reward = [r,-r]
 				if r == 0 and len(counterfac_casc_fail) > 0:
@@ -253,12 +254,13 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 			mr = 1
 			epochs = 1
 		else:
-			mr = len(self.fact_experience)/(len(self.cfact_experience)+len(self.fact_experience)) #proportionate mixing of factual and cfactual experiences
+			discount = 1 #0.501
+			mr = len(self.fact_experience)/(discount*len(self.cfact_experience)+len(self.fact_experience)) #discounted proportionate mixing of factual and cfactual experiences
 			mr = max([mr,1/self.batch_size])
 			if len(self.fact_experience) < mr*self.batch_size or len(self.cfact_experience) < (1-mr)*self.batch_size:
 				return np.NAN
 			diff = len(self.cfact_experience) - self.last_cfact_len 
-			epochs = diff + 1
+			epochs = round(1+discount*diff)
 
 			self.last_cfact_len = len(self.cfact_experience)
 		# Get changing policy
@@ -348,12 +350,15 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 			target_value = self.target(curr_policy.Q, batch).float()
 			# # Compute current value Q(s_t, a_t)
 			#tic = time.perf_counter()
-			batch_feat_obs = get_featurized_obs(batch.observation,embed_model=self.embed_model)
-			# try:
-			# 	print(torch.norm(batch_feat_obs - self.copy_batch_obs))
-			# except:
-			# 	pass
-			self.copy_batch_obs = batch_feat_obs.clone().detach()
+			if self.embed_model is None:
+				batch_feat_obs = batch.observation
+			else:
+				batch_feat_obs = get_featurized_obs(batch.observation,embed_model=self.embed_model)
+				# self.copy_batch_obs = batch_feat_obs.clone().detach()
+				# try:
+				# 	print(torch.norm(batch_feat_obs - self.copy_batch_obs))
+				# except:
+				# 	pass
 			curr_value = self.value(batch_feat_obs, batch.action)
 			# from torchviz import make_dot
 			# make_dot(curr_value).render('viz/curr_value_detach_action',format='png')

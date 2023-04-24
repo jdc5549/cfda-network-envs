@@ -464,17 +464,20 @@ class TrainableAgent(Agent):
                     a1 = all_actions.index(sorted(action[0]) if type(action[0]) == list else action[0])
                     a2 = all_actions.index(sorted(action[1]) if type(action[1]) == list else action[1])
 
-                    diff = np.abs(self.utils[env.fid][a1][a2]-rew[0])
-                    if diff > 0:
-                        print(f'Environment: {env.fid}')
-                        print(f'Action: {action}')
-                        print(f'Reward: {rew[0]}')
-                        print(f'Utility: {self.utils[env.fid][a1][a2]}')
-                        exit()
+                    # diff = np.abs(self.utils[env.fid][a1][a2]-rew[0])
+                    # if diff > 0:
+                    #     print(f'Environment: {env.fid}')
+                    #     print(f'Action: {action}')
+                    #     print(f'Reward: {rew[0]}')
+                    #     print(f'Utility: {self.utils[env.fid][a1][a2]}')
+                    #     exit()
                     rewards.append(rew[0])
                 #toc_bstore = time.perf_counter()
                 #print(f'Time to get to store_experience from start of learn: {toc_bstore-tic}')
-                self.store_experience(obs, action, rew, obs2, done,info)
+                if self.agents[0].embed_model is None:
+                    self.store_experience(feat_obs, action, rew, obs2, done,info)
+                else:
+                    self.store_experience(obs, action, rew, obs2, done,info)
                 toc_astore = time.perf_counter()
                 #print(f'Store experience time: {toc_astore-toc_bstore}')
                 #obs = obs2

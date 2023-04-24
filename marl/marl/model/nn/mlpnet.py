@@ -150,7 +150,6 @@ class MultiCriticMlp(nn.Module):
         obs = obs.to(torch.float32)
         p1_act = p1_act.to(torch.float32)
         p2_act = p2_act.to(torch.float32)
-
         obs_h = self.obs_hidden_layer(obs)
         p1_h = self.p1_hidden_layer(p1_act)
         p2_h = self.p2_hidden_layer(p2_act)

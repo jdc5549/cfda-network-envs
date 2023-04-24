@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import time
 
 def get_featurized_obs(batch_obs,embed_model=None):
-    tic = time.perf_counter()
+    #tic = time.perf_counter()
     feat_obs_list = []
     for obs in batch_obs:
         if obs.shape[0] > obs.shape[1]:
@@ -30,25 +30,24 @@ def get_featurized_obs(batch_obs,embed_model=None):
             norm_thresh = [2*(t-min_t)/(max_t-min_t)-1 if (max_t-min_t) != 0 else 0 for t in thresh]
             #toc = time.perf_counter()
             #print('thresholds: ', toc - tic)=
-            feat_t = torch.stack((feat_t,torch.tensor(norm_thresh)))
-
-
             # A = np.asarray(nx.adjacency_matrix(self.net).todense())
             # for row in A:
             #     metrics.append(row.tolist())
         ######################################Graph Embedding#######################################
         if embed_model is None:
-            embed = heuristic_feature_embedding(net)
+            feat_t = torch.stack((feat_t,torch.tensor(norm_thresh)))
+            embed = heuristic_feature_embedding(net) #TODO will need to account for CNs here
         else:
+            feat_t = feat_t.unsqueeze(0)
             from torch_geometric.utils import from_networkx
             ptgeo_data = from_networkx(net)
-            embed = embed_model(ptgeo_data.edge_index)
+            embed = embed_model(norm_thresh,ptgeo_data.edge_index)
         feat_obs = torch.cat((feat_t,embed),dim=0)
         feat_obs_list.append(feat_obs)
     batch_obs_t = torch.stack(feat_obs_list)
     batch_obs_t = torch.permute(batch_obs_t,(0,2,1))
-    toc = time.perf_counter()
-    print('Embedding time: ', toc-tic)
+    #toc = time.perf_counter()
+    #print('Embedding time: ', toc-tic)
     return batch_obs_t
 
 def heuristic_feature_embedding(net):
@@ -73,11 +72,11 @@ def heuristic_feature_embedding(net):
     #print('Closeness: ', toc - tic)
 
     #tic = time.perf_counter()
-    harmonic_centralities = [central.harmonic_centrality(net)[i+n0] for i in range(num_nodes)]
-    max_c = max(harmonic_centralities)
-    min_c = min(harmonic_centralities)
-    harmonic_centralities = [2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0 for c in harmonic_centralities]
-    metrics.append(torch.tensor(harmonic_centralities))
+    # harmonic_centralities = [central.harmonic_centrality(net)[i+n0] for i in range(num_nodes)]
+    # max_c = max(harmonic_centralities)
+    # min_c = min(harmonic_centralities)
+    # harmonic_centralities = [2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0 for c in harmonic_centralities]
+    # metrics.append(torch.tensor(harmonic_centralities))
     #toc = time.perf_counter()
     #print('Harmonic: ', toc - tic)
 
@@ -126,21 +125,27 @@ def heuristic_feature_embedding(net):
     return torch.stack(tuple(metrics))
 
 class GCN_Encoder(torch.nn.Module):
-    def __init__(self,embed_size,hidden_size,num_nodes,train):
+    def __init__(self,embed_size,hidden_size,num_features,train,depth=2):
         super().__init__()
         from torch_geometric.nn import GCNConv,Linear
         self.embed_size = embed_size
         self.hidden_size = hidden_size
-        self.num_nodes = num_nodes
+        self.depth = depth
         self.train = train
-        self.conv1 = GCNConv(1, hidden_size)
+        self.conv1 = GCNConv(num_features, hidden_size)
         self.linear = Linear(self.hidden_size,self.embed_size)
-        #self.conv2 = GCNConv(hidden_size,hidden_size)
+        ref_hconv = GCNConv(hidden_size,hidden_size)
+        hconvs = []
+        for i in range(self.depth-1):
+            hconvs.append(GCNConv(hidden_size,hidden_size))
+        self.hidden_convs = nn.Sequential(*hconvs)
 
-    def forward(self,edge_index):
-        x = self.conv1(torch.ones(self.num_nodes,1), edge_index)
+    def forward(self,node_features,edge_index):
+        x = self.conv1(node_features, edge_index)
         x = F.relu(x)
         x = F.dropout(x, training=self.train)
+        x = self.hidden_convs(x)
+        x = F.relu(x)
         x = self.linear(x)
         return(torch.transpose(torch.sigmoid(x),0,1))
 

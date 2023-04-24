@@ -23,6 +23,8 @@ class NetworkCascEnv(gym.Env):
         self.cascade_type = cascade_type
         self.episode = 0
         self.topo_eps = topo_eps
+        self.topo_count = 0
+
         if self.network_type == 'File' and filename is not None:
             if isinstance(self.filename,str):
                 self.net = nx.read_edgelist(self.filename,nodetype=int) 
@@ -78,7 +80,8 @@ class NetworkCascEnv(gym.Env):
         r = len(fail_set)/self.net.number_of_nodes()
         reward = [r,-r]
         done = [True,True]
-        info = {'init_fail':final_node_list,'fail_set':fail_set,'edges': self.scm.G.edges(),'env_id': self.fid}
+        env_id = self.fid if self.network_type == 'File' else self.topo_count
+        info = {'init_fail':final_node_list,'fail_set':fail_set,'edges': self.scm.G.edges(),'env_id': env_id}
         obs2 = self.observation_space.sample()
         return obs2,reward,done,info
     def reset(self,fid=None):
@@ -89,6 +92,8 @@ class NetworkCascEnv(gym.Env):
                 obs = nx.to_numpy_array(self.net)
                 if thresh_true: obs=np.append(obs,[self.scm.thresholds],axis=0)
                 return obs
+            else:
+                self.topo_count += 1
         self.episode = 1
         if self.network_type == 'SF':
             comm_net,self.net = create_random_nets('',self.net_size,num2gen=1,show=False)

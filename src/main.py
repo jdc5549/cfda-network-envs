@@ -19,7 +19,7 @@ from marl.model.qvalue import MultiQTable
 from marl.exploration.eps_greedy import EpsGreedy
 from marl.experience.replay_buffer import ReplayMemory
 from marl.model.nn.mlpnet import CriticMlp,MultiCriticMlp,MlpNet,GumbelMlpNet
-from marl.policy.policies import RandomPolicy,HeuristicPolicy,QCriticPolicy
+from marl.policy.policies import RandomPolicy,TargetedPolicy,RTMixedPolicy,QCriticPolicy
 from marl.tools import gymSpace2dim,ncr,get_combinatorial_actions
 from marl.agent.agent import Agent
 from marl.agent.cfa_agent import CFA_MinimaxDQNCriticAgent
@@ -54,11 +54,11 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size",default=64,type=int,help='Batch size for NN training')
     parser.add_argument("--test_freq",default=10e3,type=int,help='Frequency at which to test the agent performance during training.')
     parser.add_argument("--save_freq",default=10e3,type=int,help='Frequency at which to save the agent model during training.')
-    #parser.add_argument("--exploiters",default=False,type=bool,help='Whether to train exploiters. Default False.')
-    #parser.add_argument("--exploited_type",default='NN',type=str,help='What type of agent to train exploiters against. Valid choices are: NN,Random, and Heuristic.')
+    parser.add_argument("--exploiters",default=False,type=bool,help='Whether to train exploiters. Default False.')
+    parser.add_argument("--exploited_type",default='NN',type=str,help='What type of agent to train exploiters against. Valid choices are: NN,Random, and Heuristic.')
     parser.add_argument("--testing_episodes",default=1000,type=int,help='Number of testing episodes for evaluation (when train is false).')
     parser.add_argument("--ego_model_dir",default=None,type=str,help='dir where nn model to load is for the ego agents')
-    #parser.add_argument("--exploiter_model_dir",default=None,type=str,help='dir where nn model to load is for the exploiter agents')
+    parser.add_argument("--exploiter_model_dir",default=None,type=str,help='dir where nn model to load is for the exploiter agents')
     parser.add_argument("--p",default=0.1,type=float,help='Fraction of total nodes to be attacked/defended. Default 0.1')
     parser.add_argument("--degree",default=1,type=int,help='Number of nodes selected by the agent policy at a time. Default 1.')
     parser.add_argument("--embed_type",default='heuristic',help='Method for embedding a graph into a feature vector. Default "heuristic".')
@@ -117,14 +117,14 @@ if __name__ == '__main__':
         if args.embed_type == 'GCN':
             from graph_embedding import GCN_Encoder
             embed_size = args.embed_size
-            embed_model = GCN_Encoder(embed_size,args.mlp_hidden_size,args.net_size,True)
+            embed_model = GCN_Encoder(embed_size,args.mlp_hidden_size,1,True)
         elif args.embed_type == 'heuristic':
-            embed_size = 6
+            embed_size = 5
             embed_model = None
         else:
             print(f'Node embedding type {args.embed_type} not recognized.')
             exit()
-        #agent_train = not args.exploiters
+        agent_train = not args.exploiters
         if args.ego_model_dir is not None:
             attacker_model_file = os.path.join(args.ego_model_dir + 'Attacker/',os.listdir(args.ego_model_dir + 'Attacker/')[-1])
             defender_model_file = os.path.join(args.ego_model_dir + 'Defender/',os.listdir(args.ego_model_dir + 'Defender/')[-1])
@@ -171,35 +171,41 @@ if __name__ == '__main__':
         #                 print(f'actions: {j},{k}')
         #                 print(f'util: {utils[i][j][k]}, reward: {rew[0]}')
         # exit()
-        # if args.exploiters:
-        #     if args.exploited_type == 'NN':
-        #         agent_list = [attacker_agent,defender_agent]
-        #     elif args.exploited_type == 'Random':
-        #         random_policy = RandomPolicy(act_sp,num_actions=num_samples,all_actions= get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))
-        #         agent_list = [copy.deepcopy(random_policy),copy.deepcopy(random_policy)]
-        #     elif args.exploited_type == 'Heuristic':
-        #         heuristic_policy = HeuristicPolicy(act_sp,num_actions=num_samples,all_actions= get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))
-        #         agent_list = [copy.deepcopy(heuristic_policy),copy.deepcopy(heuristic_policy)]
-
-        #     qmodel_explt = CriticMlp(gymSpace2dim(obs_sp)[1],args.degree*gymSpace2dim(obs_sp)[1]) #action feature space same as obs space
-        #     actor = GumbelMlpNet(gymSpace2dim(obs_sp)[1],gymSpace2dim(act_sp))#,last_activ=F.softmax)
-        #     def_expltr = FeaturizedACAgent(copy.deepcopy(qmodel_explt),copy.deepcopy(actor),obs_sp,act_sp,experience=copy.deepcopy(experience),exploration=copy.deepcopy(exploration),batch_size=args.batch_size*num_samples,name='Defender Exploiter',
-        #        lr_critic=1e-3,lr_actor=1e-4,act_degree=args.degree)#,target_update_freq=1000,name='Attacker')
-        #     atk_expltr = FeaturizedACAgent(copy.deepcopy(qmodel_explt),copy.deepcopy(actor),obs_sp,act_sp,experience=copy.deepcopy(experience),exploration=copy.deepcopy(exploration),batch_size=args.batch_size*num_samples,name='Attacker Exploiter',
-        #        lr_critic=1e-3,lr_actor=1e-4,act_degree=args.degree)
-        #     #def_expltr = DQNCriticAgent(copy.deepcopy(qmodel_explt),obs_sp,act_sp,experience=copy.deepcopy(experience),lr=0.001,batch_size=args.batch_size,name="Defender Exploiter",
-        #     #        train=True,model=None,act_degree=args.degree)
-        #     #atk_expltr = DQNCriticAgent(copy.deepcopy(qmodel_explt),obs_sp,act_sp,experience=copy.deepcopy(experience),lr=0.001,batch_size=args.batch_size,name="Attacker Exploiter",
-        #     #        train=True,model=None,act_degree=args.degree)
-        #     mas = MARL_with_exploiters(agent_list,[def_expltr,atk_expltr],log_dir='marl_logs',name=args.exp_name,obs=[ob[0] for ob in env.obs],nash_policies=eqs,
-        #             exploited=args.exploited_type,explt_opp_update_freq=args.test_freq)
-        # else:
-        mas = marl.MARL([attacker_agent,defender_agent],name=args.exp_name,log_dir='marl_logs',nash_policies=eqs,utils=utils,act_degree=args.degree,hparams=hparams)
-        # if args.exploited_type == 'NN':
-        #     attacker_agent.set_mas(mas)
-        #     defender_agent.set_mas(mas)
         test_envs = [NetworkCascEnv(args.net_size,args.p,args.p,embed_size,'File',discrete_obs=args.discrete_obs,degree=args.degree,cascade_type=args.cascade_type,
             filename = os.path.join(args.test_nets_dir,f)) for f in os.listdir(args.test_nets_dir) if 'thresh' not in f]
+        if args.exploiters:
+            if args.exploited_type == 'NN':
+                agent_list = [attacker_agent,defender_agent]
+            elif args.exploited_type == 'Random':
+                random_policy = RandomPolicy(act_sp,num_actions=num_samples,all_actions= get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))
+                agent_list = [copy.deepcopy(random_policy),copy.deepcopy(random_policy)]
+            elif args.exploited_type == 'Targeted':
+                heuristic_policy = TargetedPolicy(act_sp,num_actions=num_samples,all_actions= get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))
+                agent_list = [copy.deepcopy(heuristic_policy),copy.deepcopy(heuristic_policy)]
+            elif args.exploited_type == 'RTMixed':
+                random_policy = RandomPolicy(act_sp,num_actions=num_samples,all_actions= get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))
+                targeted_policy = TargetedPolicy(act_sp,num_actions=num_samples,all_actions= get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))
+                pt_atk,pt_def = get_rtmixed_nash(test_envs,targeted_policy,random_policy)
+                test_obs = [env.reset() for env in test_envs]
+                agent_list = [RTMixedPolicy(act_sp,pt_atk,test_obs,num_actions=num_samples,all_actions=get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree)),
+                RTMixedPolicy(act_sp,pt_def,test_obs,num_actions=num_samples,all_actions=get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))]
+            qmodel_explt = CriticMlp(gymSpace2dim(obs_sp)[1],args.degree*gymSpace2dim(obs_sp)[1]) #action feature space same as obs space
+            actor = GumbelMlpNet(gymSpace2dim(obs_sp)[1],gymSpace2dim(act_sp))#,last_activ=F.softmax)
+            def_expltr = FeaturizedACAgent(copy.deepcopy(qmodel_explt),copy.deepcopy(actor),obs_sp,act_sp,experience=copy.deepcopy(experience),exploration=copy.deepcopy(exploration),batch_size=args.batch_size*num_samples,name='Defender Exploiter',
+               lr_critic=1e-3,lr_actor=1e-4,act_degree=args.degree)#,target_update_freq=1000,name='Attacker')
+            atk_expltr = FeaturizedACAgent(copy.deepcopy(qmodel_explt),copy.deepcopy(actor),obs_sp,act_sp,experience=copy.deepcopy(experience),exploration=copy.deepcopy(exploration),batch_size=args.batch_size*num_samples,name='Attacker Exploiter',
+               lr_critic=1e-3,lr_actor=1e-4,act_degree=args.degree)
+            #def_expltr = DQNCriticAgent(copy.deepcopy(qmodel_explt),obs_sp,act_sp,experience=copy.deepcopy(experience),lr=0.001,batch_size=args.batch_size,name="Defender Exploiter",
+            #        train=True,model=None,act_degree=args.degree)
+            #atk_expltr = DQNCriticAgent(copy.deepcopy(qmodel_explt),obs_sp,act_sp,experience=copy.deepcopy(experience),lr=0.001,batch_size=args.batch_size,name="Attacker Exploiter",
+            #        train=True,model=None,act_degree=args.degree)
+            mas = MARL_with_exploiters(agent_list,[def_expltr,atk_expltr],log_dir='marl_logs',name=args.exp_name,obs=[ob[0] for ob in env.obs],nash_policies=eqs,
+                    exploited=args.exploited_type,explt_opp_update_freq=args.test_freq)
+        else:
+            mas = marl.MARL([attacker_agent,defender_agent],name=args.exp_name,log_dir='marl_logs',nash_policies=eqs,utils=utils,act_degree=args.degree,hparams=hparams)
+            # if args.exploited_type == 'NN':
+            #     attacker_agent.set_mas(mas)
+            #     defender_agent.set_mas(mas)
         toc = time.perf_counter()
         print(f'overall time to start learn {toc - tic}')
         #tic = time.perf_counter()

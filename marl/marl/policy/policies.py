@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import random
 import multiprocessing as mp
 import gym
 import torch
@@ -46,7 +47,7 @@ class RandomPolicy(Policy):
                 actions_list.append(actions[0])
         return actions_list
 
-class HeuristicPolicy(Policy):
+class TargetedPolicy(Policy):
     """
     The class of Node Degree Heuristic policies
     
@@ -74,6 +75,48 @@ class HeuristicPolicy(Policy):
             else:
                 actions_list.append(actions[0])
         return actions_list
+
+class RTMixedPolicy(Policy):
+    """
+    The class of Node Degree Heuristic policies
+    
+    :param model: (Model or torch.nn.Module) The q-value model 
+    :param action_space: (gym.Spaces) The action space
+    """
+    def __init__(self, action_space,pt,test_obs,num_actions=1,all_actions=[]):
+        self.num_actions=num_actions
+        self.all_actions = all_actions
+        self.pt = pt
+        self.test_obs = test_obs
+        
+    def __call__(self, state):
+        """
+        """
+        rn = random.uniform(0,1)
+        actions_list = []
+        idx = self.test_obs.index(state)
+        if rn <= self.pt[idx]:
+            for j in range(len(state)):
+                sorted_idx = np.flip(np.argsort(state[j][:,1]))
+                sorted_acts = [self.all_actions[i] for i in sorted_idx]
+                actions = sorted_acts[:self.num_actions]
+                if len(actions) > 1:
+                    actions_list.append(actions)
+                else:
+                    actions_list.append(actions[0])
+        else:
+            for j in range(len(state)):
+                actions = []
+                for i in range(self.num_actions):    
+                    a = self.action_space.sample()
+                    while a in actions:
+                        a = self.action_space.sample()
+                    actions.append(self.all_actions[a])
+                if len(actions) > 1:
+                    actions_list.append(actions)
+                else:
+                    actions_list.append(actions[0])
+        return actions_list
         
 
 class QPolicy(ModelBasedPolicy):
@@ -87,7 +130,6 @@ class QPolicy(ModelBasedPolicy):
     def __init__(self, model, observation_space=None, action_space=None):
         self.observation_space = observation_space
         self.action_space = action_space
-        
         self.model = marl.model.make(model, obs_sp=gymSpace2dim(self.observation_space), act_sp=gymSpace2dim(self.action_space))
         
         
