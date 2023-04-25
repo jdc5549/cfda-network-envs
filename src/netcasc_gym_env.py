@@ -61,7 +61,7 @@ class NetworkCascEnv(gym.Env):
         self.degree = degree
         self.action_space = spaces.Discrete(ncr(self.net_size,degree))
         thresh_true = self.cascade_type == 'threshold' or self.cascade_type == 'shortPath'
-        net_feature_size = embed_size+2 if thresh_true else embed_size+1
+        net_feature_size = embed_size+1
         self.observation_space = spaces.Box(low=-1,high=1,shape=(self.net_size,net_feature_size),dtype=np.float32)
 
     def step(self,node_lists):
@@ -84,6 +84,7 @@ class NetworkCascEnv(gym.Env):
         info = {'init_fail':final_node_list,'fail_set':fail_set,'edges': self.scm.G.edges(),'env_id': env_id}
         obs2 = self.observation_space.sample()
         return obs2,reward,done,info
+
     def reset(self,fid=None):
         thresh_true = self.cascade_type == 'threshold' or self.cascade_type == 'shortPath'
         if self.topo_eps is not None:

@@ -13,6 +13,7 @@ from .policy import Policy, ModelBasedPolicy
 from marl.tools import gymSpace2dim,get_combinatorial_actions
 
 from scipy.optimize import linprog
+import networkx as nx
 
 
 class RandomPolicy(Policy):
@@ -24,7 +25,7 @@ class RandomPolicy(Policy):
     """
     def __init__(self, action_space,num_actions=1,all_actions=[]):
         self.action_space = action_space
-        self.num_actions=num_actions
+        self.num_actions= num_actions
         self.all_actions = all_actions
         
     def __call__(self, state,num_actions=1):
@@ -67,8 +68,11 @@ class TargetedPolicy(Policy):
         """
         actions_list = []
         for j in range(len(state)):
-            sorted_idx = np.flip(np.argsort(state[j][:,1]))
-            sorted_acts = [self.all_actions[i] for i in sorted_idx]
+            G = nx.from_numpy_matrix(state[j][:-1])
+            node_degrees = [G.degree(n) for n in G.nodes]
+            act_degrees = [node_degrees[act[0]] + node_degrees[act[1]] for act in self.all_actions]
+            sorted_idx = np.flip(np.argsort(act_degrees))
+            sorted_acts = [self.all_actions[idx] for idx in sorted_idx]
             actions = sorted_acts[:num_actions]
             if len(actions) > 1:
                 actions_list.append(actions)

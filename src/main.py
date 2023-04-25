@@ -32,8 +32,8 @@ from scm import SCM
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from collections import defaultdict, deque
-from utils import create_random_nets
+from collections import defaultdict,deque
+from utils import create_random_nets,get_rtmixed_nash
 
 if __name__ == '__main__':
     import argparse
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     tic = time.perf_counter()
     args = parser.parse_args()
     num_acts = len(get_combinatorial_actions(args.net_size,args.degree))
-    if num_acts > 225 and torch.cuda.is_available():
+    if num_acts > 22500 and torch.cuda.is_available():
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
         device = torch.cuda.device(0)
         print('Using Device: cuda')
@@ -119,7 +119,7 @@ if __name__ == '__main__':
             embed_size = args.embed_size
             embed_model = GCN_Encoder(embed_size,args.mlp_hidden_size,1,True)
         elif args.embed_type == 'heuristic':
-            embed_size = 5
+            embed_size = 6
             embed_model = None
         else:
             print(f'Node embedding type {args.embed_type} not recognized.')
@@ -186,6 +186,9 @@ if __name__ == '__main__':
                 random_policy = RandomPolicy(act_sp,num_actions=num_samples,all_actions= get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))
                 targeted_policy = TargetedPolicy(act_sp,num_actions=num_samples,all_actions= get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))
                 pt_atk,pt_def = get_rtmixed_nash(test_envs,targeted_policy,random_policy)
+                print(pt_atk)
+                print(pt_def)
+                exit()
                 test_obs = [env.reset() for env in test_envs]
                 agent_list = [RTMixedPolicy(act_sp,pt_atk,test_obs,num_actions=num_samples,all_actions=get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree)),
                 RTMixedPolicy(act_sp,pt_def,test_obs,num_actions=num_samples,all_actions=get_combinatorial_actions(gymSpace2dim(obs_sp)[0],args.degree))]

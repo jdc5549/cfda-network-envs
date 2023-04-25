@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 import random
+import time
+import copy
 
 #Config Globals
 K = 2.422
@@ -48,7 +50,6 @@ def make_comms(network_b, copy,num_nodes=None):
         for i, j in network_a.edges():
             nodes.append(i)
             targets.append(j)
-
         # rewire edges from each node, adapted from NetworkX W/S graph generator
         # http://networkx.github.io/documentation/latest/_modules/networkx/generators/random_graphs.html#watts_strogatz_graph
         # no self loops or multiple edges allowed
@@ -125,20 +126,20 @@ def ncr(n, r):
 
 def get_rtmixed_nash(envs,targeted_policy,random_policy):
     print('Getting NashEQ for RTMixed Benchmark Strategy')
-    tic = time.perfcounter()
+    tic = time.perf_counter()
     num_data = 1000
     p_atk = np.zeros(len(envs))
     p_def = np.zeros(len(envs))
     for i,env in enumerate(envs):
-        U = np.zeros(2,2) #[[atdt,atdr],[ardt,ardr]]
+        U = np.zeros((2,2)) #[[atdt,atdr],[ardt,ardr]]
         atk_policy = copy.deepcopy(targeted_policy)
         def_policy = copy.deepcopy(random_policy)
         rewards = []
         for j in range(num_data):
             obs = env.reset()
-            action = [atk_policy(obs),def_policy(obs)]
+            action = [atk_policy([obs])[0],def_policy([obs])[0]]
             _,reward,_,_ = env.step(action)
-            rewards.append(reward)
+            rewards.append(reward[0])
         U[0,1] = np.mean(rewards)
 
         atk_policy = copy.deepcopy(random_policy)
@@ -146,9 +147,9 @@ def get_rtmixed_nash(envs,targeted_policy,random_policy):
         rewards = []
         for j in range(num_data):
             obs = env.reset()
-            action = [atk_policy(obs),def_policy(obs)]
+            action = [atk_policy([obs])[0],def_policy([obs])[0]]
             _,reward,_,_ = env.step(action)
-            rewards.append(reward)
+            rewards.append(reward[0])
         U[1,0] = np.mean(rewards)
 
         atk_policy = copy.deepcopy(random_policy)
@@ -156,11 +157,10 @@ def get_rtmixed_nash(envs,targeted_policy,random_policy):
         rewards = []
         for j in range(num_data):
             obs = env.reset()
-            action = [atk_policy(obs),def_policy(obs)]
+            action = [atk_policy([obs])[0],def_policy([obs])[0]]
             _,reward,_,_ = env.step(action)
-            rewards.append(reward)
+            rewards.append(reward[0])
         U[1,1] = np.mean(rewards)
-
         if U[1,0] <= U[1,1]:
             p_atk[i] = 0
             p_def[i] = 1
@@ -171,7 +171,7 @@ def get_rtmixed_nash(envs,targeted_policy,random_policy):
             else:
                 p_atk[i] = (U[1,0] - U[1,1])/(U[0,1]+U[1,0]-U[1,1])
                 p_def[i] = (U[0,1] - U[1,1])/(U[0,1]+U[1,0]-U[1,1])
-
-    toc = time.perfcounter()
+        print(U)
+    toc = time.perf_counter()
     print(f'Finished in {toc-tic} seconds')
-    return p_atk,p_defs
+    return p_atk,p_def

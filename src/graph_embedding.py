@@ -1,6 +1,7 @@
 import networkx as nx
 import networkx.algorithms.centrality as central
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import time
 
@@ -34,14 +35,15 @@ def get_featurized_obs(batch_obs,embed_model=None):
             # for row in A:
             #     metrics.append(row.tolist())
         ######################################Graph Embedding#######################################
+        norm_thresh = torch.tensor(norm_thresh)
         if embed_model is None:
-            feat_t = torch.stack((feat_t,torch.tensor(norm_thresh)))
+            feat_t = torch.stack((feat_t,norm_thresh))
             embed = heuristic_feature_embedding(net) #TODO will need to account for CNs here
         else:
             feat_t = feat_t.unsqueeze(0)
             from torch_geometric.utils import from_networkx
             ptgeo_data = from_networkx(net)
-            embed = embed_model(norm_thresh,ptgeo_data.edge_index)
+            embed = embed_model(norm_thresh.reshape([-1,1]),ptgeo_data.edge_index)
         feat_obs = torch.cat((feat_t,embed),dim=0)
         feat_obs_list.append(feat_obs)
     batch_obs_t = torch.stack(feat_obs_list)
@@ -135,17 +137,18 @@ class GCN_Encoder(torch.nn.Module):
         self.conv1 = GCNConv(num_features, hidden_size)
         self.linear = Linear(self.hidden_size,self.embed_size)
         ref_hconv = GCNConv(hidden_size,hidden_size)
-        hconvs = []
+        self.hconvs = []
         for i in range(self.depth-1):
-            hconvs.append(GCNConv(hidden_size,hidden_size))
-        self.hidden_convs = nn.Sequential(*hconvs)
+            self.hconvs.append(GCNConv(hidden_size,hidden_size))
 
     def forward(self,node_features,edge_index):
+        node_features = node_features.to(torch.float32)
         x = self.conv1(node_features, edge_index)
         x = F.relu(x)
         x = F.dropout(x, training=self.train)
-        x = self.hidden_convs(x)
-        x = F.relu(x)
+        for hc in self.hconvs:
+            x = hc(x,edge_index)
+            x = F.relu(x)
         x = self.linear(x)
         return(torch.transpose(torch.sigmoid(x),0,1))
 
