@@ -124,6 +124,27 @@ def ncr(n, r):
     denom = reduce(op.mul, range(1, r+1), 1)
     return numer // denom  # or / in Python 2
 
+def get_combinatorial_actions(total_nodes,num_nodes_chosen):
+    if num_nodes_chosen == 1:
+        return [i for i in range(total_nodes)]
+    #Note: currently only works for num_nodes_chosen = 2
+    num_actions = ncr(total_nodes,num_nodes_chosen)
+    curr_action = [i for i in range(num_nodes_chosen)]
+    last_action = [i for i in range(total_nodes-1,total_nodes-num_nodes_chosen-1,-1)]
+    last_action.reverse()
+    all_actions = [curr_action.copy()]
+    while curr_action != last_action:
+        for i in range(num_nodes_chosen,0,-1):
+            if curr_action[i-1] < total_nodes-(num_nodes_chosen-i+1):
+                curr_action[i-1] += 1
+                break
+            else:
+                curr_action[i-1] = curr_action[i-2]+2
+                for j in range(i,num_nodes_chosen):
+                    curr_action[j] = curr_action[j-1]+1
+        all_actions.append(curr_action.copy()) 
+    return all_actions
+
 def get_rtmixed_nash(envs,targeted_policy,random_policy):
     print('Getting NashEQ for RTMixed Benchmark Strategy')
     tic = time.perf_counter()

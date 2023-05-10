@@ -66,7 +66,7 @@ def _gen_utils_eqs(fnci):
 
 if __name__ == '__main__':
     import argparse
-    from main import NetworkCascEnv
+    from netcasc_gym_env import NetworkCascEnv
     import multiprocessing as mp
 
     parser = argparse.ArgumentParser(description='Network Generation Args')
@@ -82,22 +82,22 @@ if __name__ == '__main__':
 
     if args.net_save_dir[-1] != '/':
         args.net_save_dir += '/'
-    full_dir = args.net_save_dir + f'SF_{args.num_nodes}n_2.422deg_{args.env_type}_p{args.p}_{args.cascade_type}Casc_{args.num2gen}nets/'
-    if not os.path.isdir(full_dir):
-        os.mkdir(full_dir)
+    #full_dir = args.net_save_dir + f'SF_{args.num_nodes}n_2.422deg_{args.env_type}_p{args.p}_{args.cascade_type}Casc_{args.num2gen}nets/'
+    if not os.path.isdir(args.net_save_dir):
+        os.mkdir(args.net_save_dir)
     if args.env_type == 'NetworkCascEnv':
         gen_threshes = True
     else:
         gen_threshes = False
-    create_random_nets(full_dir,args.num_nodes,gen_threshes=gen_threshes,num2gen=args.num2gen)
+    create_random_nets(args.net_save_dir,args.num_nodes,gen_threshes=gen_threshes,num2gen=args.num2gen)
     if args.nash_eqs_dir is not None:
         if args.nash_eqs_dir[-1] != '/':
             args.nash_eqs_dir += '/'
-        args.nash_eqs_dir = args.nash_eqs_dir + f'SF_{args.num_nodes}n_2.422deg_{args.env_type}_p{args.p}_{args.cascade_type}Casc_{args.num2gen}nets/'
+        #args.nash_eqs_dir = args.nash_eqs_dir + f'SF_{args.num_nodes}n_2.422deg_{args.env_type}_p{args.p}_{args.cascade_type}Casc_{args.num2gen}nets/'
         if not os.path.isdir(args.nash_eqs_dir):
             os.mkdir(args.nash_eqs_dir)
         tic = time.perf_counter()
-        files = [f for f in os.listdir(full_dir) if 'thresh' not in f]
+        files = [f for f in os.listdir(args.net_save_dir) if 'thresh' not in f]
         if args.cascade_type == 'all': casc = Cascade_Types 
         else: casc = [args.cascade_type]
         if casc not in Cascade_Types:
@@ -105,7 +105,7 @@ if __name__ == '__main__':
         f_args = []
         for c in casc:
             for i,f in enumerate(files):
-                f_args.append((os.path.join(full_dir,f),c,i))
+                f_args.append((os.path.join(args.net_save_dir,f),c,i))
         with mp.Pool(processes=min([len(f_args),mp.cpu_count()-2])) as pool:
             pool.map(_gen_utils_eqs, f_args)
         pool.close()

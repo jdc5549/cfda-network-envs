@@ -94,6 +94,7 @@ class NetworkCascEnv(gym.Env):
                 if thresh_true: obs=np.append(obs,[self.scm.thresholds],axis=0)
                 return obs
             else:
+                #print('new topo in env')
                 self.topo_count += 1
         self.episode = 1
         if self.network_type == 'SF':

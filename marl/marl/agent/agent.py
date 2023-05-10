@@ -423,23 +423,30 @@ class TrainableAgent(Agent):
         rewards = []
         cmses = []
         self.reset_exploration(nb_timesteps)
+        last_obs = env.reset()
         while timestep < nb_timesteps:
             tic = time.perf_counter()
-            eps = self.update_exploration(timestep)
             episode +=1
             if exploiters:
                 fid = random.choice([i for i in range(len(env.filename))])
                 obs = env.reset(fid=fid)
             else:
                 obs = env.reset()
+            if not np.array_equal(last_obs,obs): #new topology
+                #print('Obs: ', obs)
+                #print('changing topo ep in agent.py')
+                self.agents[0].exploration.topo_reset(timestep)
+            last_obs = obs
+            eps = self.update_exploration(timestep)
             done = False
             if render:
                 time.sleep(time_laps)
             for _ in range(timestep, timestep + max_num_step):
                 toc_bact = time.perf_counter()
                 #print(f'Time to get to self.action from start of learn: {toc_bact-tic}')
-                feat_obs = get_featurized_obs([obs],embed_model=self.agents[0].embed_model).detach().squeeze()
+                feat_obs = get_featurized_obs([obs],embed_model=self.agents[0].embed_model).squeeze()
                 action = self.action(feat_obs,num_actions=int(env.num_nodes_attacked/env.degree))
+                #print('Action: ', action)
                 #toc_aact = time.perf_counter()
                 #print(f'self.action time: {toc_aact-toc_bact}')
                 if exploiters:
@@ -463,7 +470,6 @@ class TrainableAgent(Agent):
                     all_actions = get_combinatorial_actions(env.net_size,env.num_nodes_attacked) #delete this after debugging
                     a1 = all_actions.index(sorted(action[0]) if type(action[0]) == list else action[0])
                     a2 = all_actions.index(sorted(action[1]) if type(action[1]) == list else action[1])
-
                     # diff = np.abs(self.utils[env.fid][a1][a2]-rew[0])
                     # if diff > 0:
                     #     print(f'Environment: {env.fid}')
@@ -474,10 +480,11 @@ class TrainableAgent(Agent):
                     rewards.append(rew[0])
                 #toc_bstore = time.perf_counter()
                 #print(f'Time to get to store_experience from start of learn: {toc_bstore-tic}')
-                if self.agents[0].embed_model is None:
-                    self.store_experience(feat_obs, action, rew, obs2, done,info)
-                else:
-                    self.store_experience(obs, action, rew, obs2, done,info)
+                self.store_experience(feat_obs, action, rew, obs2, done,info)
+                # if self.agents[0].embed_model is None:
+                #     self.store_experience(feat_obs, action, rew, obs2, done,info)
+                # else:
+                #     self.store_experience(obs, action, rew, obs2, done,info)
                 toc_astore = time.perf_counter()
                 #print(f'Store experience time: {toc_astore-toc_bstore}')
                 #obs = obs2

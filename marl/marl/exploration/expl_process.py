@@ -14,6 +14,9 @@ class ExplorationProcess(object):
         :param training_duration: (int) Number of timesteps while training
         """    
         raise NotImplementedError
+
+    def topo_reset(self,t):
+        pass
         
     def update(self, t):
         """ 

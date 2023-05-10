@@ -252,6 +252,7 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 			if len(self.fact_experience) < self.batch_size:
 				return np.NAN
 			mr = 1
+			#epochs = int(len(self.fact_experience)/self.batch_size) if len(self.fact_experience)%self.batch_size == 0 else 0
 			epochs = 1
 		else:
 			discount = 1 #0.501
@@ -277,9 +278,13 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 		# if len(self.cfact_experience) > 0 and t % debug_print_step == 0:
 		# 	print(f'Cfact Buffer Length {len(self.cfact_experience)}. Training for {epochs} epochs.')
 		# 	print(f'Fact Buffer Length {len(self.fact_experience)}')
+		# if epochs > 0:
+		# 	print('Model Update...')
 		for i in range(epochs):
+			#print(f'Epoch {i}/{epochs-1}')
 			if mr >= 1:
 				batch = self.fact_experience.sample(self.batch_size)
+				#batch = self.fact_experience.get_transition([j for j in range(self.batch_size*i,self.batch_size*(i+1))])
 			elif mr < 1/self.batch_size:
 				batch = self.cfact_experience.sample(self.batch_size)
 			else:
@@ -346,14 +351,14 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 			# for j,a in enumerate(batch.action):
 			# 	if a[0] == a[1]:
 			# 		idxs.append(j)
-
 			target_value = self.target(curr_policy.Q, batch).float()
 			# # Compute current value Q(s_t, a_t)
 			#tic = time.perf_counter()
-			if self.embed_model is None:
-				batch_feat_obs = batch.observation
-			else:
-				batch_feat_obs = get_featurized_obs(batch.observation,embed_model=self.embed_model)
+			batch_feat_obs = batch.observation
+			# if self.embed_model is None:
+			# 	batch_feat_obs = batch.observation
+			# else:
+			# 	batch_feat_obs = get_featurized_obs(batch.observation,embed_model=self.embed_model)
 				# self.copy_batch_obs = batch_feat_obs.clone().detach()
 				# try:
 				# 	print(torch.norm(batch_feat_obs - self.copy_batch_obs))

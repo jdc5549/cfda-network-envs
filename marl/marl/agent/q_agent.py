@@ -208,7 +208,8 @@ class DQNAgent(QAgent):
         loss = self.criterion(curr_value, target_value)
 
         # from torchviz import make_dot
-        # make_dot(loss).render(f'viz/loss',format='png')
+        # make_dot(loss).render(f'viz/new_loss',format='png')
+        # exit()
         loss.backward()
 
         # except:

@@ -36,14 +36,18 @@ python src/main.py --train True --net_size 10 --test_nets_dir 'data/networks/gen
 python src/couplednetworks_gym_cfa.py --train True --net_size 10 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.1' --p 0.1 --nash_eqs_dir 'output/nasheqs/10n_p10_SimpleCascadeEnv' --degree 1 --exp_name '10nc1_random8' --learning_rate 0.001 --sched_step 100000 --sched_gamma 0.1 --test_freq 1000 --save_freq 1000 --training_steps 200000 --net_type 'SF'
 
 5c2 Single Topology
-python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --degree 2 --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 5000 --sched_gamma 0.1 --test_freq 1000 --save_freq 1000 --training_steps 10000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --cascade_type 'threshold'
+python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --degree 2 --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 2500 --sched_gamma 0.1 --test_freq 500 --save_freq 500 --training_steps 5000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --cascade_type 'threshold' --exploration_type 'Combinatorial'
 
 5c2 Multi-File
-python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --degree 2 --exp_name '5c2_cdfa_thresh_randex_mf1' --learning_rate 0.001 --sched_step 10000 --sched_gamma 0.1 --test_freq 1000 --save_freq 1000 --training_steps 20000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --cascade_type threshold --eps_fin 1.0 --fin_expl 1 --cfa True
+python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --degree 2 --exp_name 'comb_expl_mftest3' --learning_rate 0.001 --sched_step 5000 --sched_gamma 0.1 --test_freq 1000 --save_freq 1000 --training_steps 10000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --cascade_type threshold --exploration_type 'Combinatorial' 
+
+--eps_fin 1.0 --fin_expl 1
+
+--exploration_type 'EpsGreedy' --eps_fin 1.0 --fin_expl 1
 
 5c2 Random Topology
-python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --degree 2 --exp_name 'gcn_test' --learning_rate 0.001 --sched_step 50000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 100000 --net_type 'SF' --cascade_type threshold --eps_fin 1.0 --fin_expl 1 --embed_type 'GCN' --embed_size 32
-
+python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --degree 2 --exp_name 'cdme_expl1' --learning_rate 0.001 --sched_step 25000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 50000 --net_type 'SF' --cascade_type threshold --exploration_type 'Combinatorial' --topo_eps 10
+--eps_fin 1.0 --fin_expl 1
 
 25c2 Multi-File
 python src/main.py --train True --net_size 25 --test_nets_dir 'data/networks/generated/SF_25n_2.422deg_NetworkCascEnv_p0.08_allCasc_10nets' --p 0.08 --nash_eqs_dir 'data/nasheqs/SF_25n_2.422deg_NetworkCascEnv_p0.08_allCasc_10nets' --degree 2 --exp_name '25c2_CFA_thresh_randex_mf1' --learning_rate 0.001 --sched_step 10000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 30000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_25n_2.422deg_NetworkCascEnv_p0.08_allCasc_10nets' --cascade_type threshold --cfa True --eps_fin 1.0 --fin_expl 1
@@ -52,7 +56,7 @@ python src/main.py --train True --net_size 25 --test_nets_dir 'data/networks/gen
 python src/main.py --train True --net_size 50 --test_nets_dir 'data/networks/generated/SF_50n_2.422deg_NetworkCascEnv_p0.04_thresholdCasc_1nets' --p 0.04 --nash_eqs_dir 'data/nasheqs/SF_50n_2.422deg_NetworkCascEnv_p0.04_thresholdCasc_1nets' --degree 2 --exp_name '50c2_thresh_rlex_sf1' --learning_rate 0.001 --sched_step 10000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 20000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_50n_2.422deg_NetworkCascEnv_p0.04_thresholdCasc_1nets' --cascade_type threshold
 
 Random Topology File CFA
-python src/couplednetworks_gym_cfa.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_SimpleCascadeEnv_p0.4' --p 0.4 --nash_eqs_dir 'output/nasheqs/5n_p40_SimpleCascadeEnv' --degree 2 --exp_name '5nc2_random_cfa100ep2' --learning_rate 0.001 --sched_step 25000 --sched_gamma 0.1 --test_freq 1000 --save_freq 1000 --training_steps 100000 --net_type 'SF' --cfa True --topo_eps 100
+python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_SimpleCascadeEnv_p0.4' --p 0.4 --nash_eqs_dir 'output/nasheqs/5n_p40_SimpleCascadeEnv' --degree 2 --exp_name 'test_cbexpl' --learning_rate 0.001 --sched_step 125000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 250000 --net_type 'SF' --exploration_type 'Combinatorial'
 
 Train Mixed Heuristic Exploiter
 python src/main.py --train True --exploiters True --net_size 100 --test_nets_dir 'data/networks/generated/SF_100n_2.422deg_NetworkCascEnv_p0.02_allCasc_10nets' --p 0.02 --degree 2 --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 100000 --sched_gamma 0.1 --test_freq 5000 --save_freq 5000 --training_steps 200000 --net_type 'SF' --cascade_type threshold --eps_fin 1.0 --fin_expl 1 --cfa True --exploited_type 'RTMixed'
@@ -60,3 +64,13 @@ python src/main.py --train True --exploiters True --net_size 100 --test_nets_dir
 
 Tensorboard Regex
 ^((?!\/).)*$
+
+----------------------------------------------------------------------------------------------------------
+Supervised Learning
+python src/create_SL_data_set.py --net_size 5 --num_topologies 100 --num_trials 10 
+
+python src/SL_train.py --train_data_dir './data/5C2/training_data/100topo_10trials_thresholdcasc/' --val_data_dir './data/5C2/validation_data/' --exp_name 'small_data2' --val_freq 10 --num_epochs 100000 --sched_step 200000
+
+python src/generate_networks.py --net_save_dir './data/5C2/validation_data/topologies' --nash_eqs_dir './data/5C2/validation_data/nash_eqs' --num_nodes 5 --num2gen 10 --p 0.4 ----cascade_type threshold
+
+python src/SL_validate.py  --data_dir './data/5C2/validation_data/' --q_model_path './models/SL/5C2/test.pt' --net_size 5

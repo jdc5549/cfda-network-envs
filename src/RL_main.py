@@ -16,6 +16,7 @@ sys.path.append('./marl/')
 import marl
 from marl.agent import DQNAgent, DQNCriticAgent,MinimaxDQNCriticAgent,FeaturizedACAgent,MinimaxQAgent
 from marl.model.qvalue import MultiQTable
+from marl.exploration.combinatorial_exploration import CombinatorialExplProcess
 from marl.exploration.eps_greedy import EpsGreedy
 from marl.experience.replay_buffer import ReplayMemory
 from marl.model.nn.mlpnet import CriticMlp,MultiCriticMlp,MlpNet,GumbelMlpNet
@@ -47,6 +48,7 @@ if __name__ == '__main__':
     parser.add_argument("--learning_rate",default=0.1,type=float,help='Reinforcement Learning rate.')
     parser.add_argument("--sched_step",default=50e3,type=int,help='How often to reduce the learning rate for training NN model')
     parser.add_argument("--sched_gamma",default=0.1,type=float,help='How much to reduce the learning rate after shed_step steps')
+    parser.add_argument("--exploration_type",default='Combinatorial',type=str,help="Which exploration strategy to use")
     parser.add_argument("--eps_deb",default=1.0,type=float,help='How much exploration to process when exploration begins')
     parser.add_argument("--eps_fin",default=0.01,type=float,help='How much exploration to process when exploration ends')
     parser.add_argument("--deb_expl",default=0,type=float,help='When (as fraction of total training steps) to begin exploration')
@@ -148,16 +150,24 @@ if __name__ == '__main__':
         obs_sp = training_env.observation_space
         act_sp = training_env.action_space
         num_samples = int(training_env.num_nodes_attacked/args.degree)
-        exploration = EpsGreedy(eps_deb=args.eps_deb, eps_fin=args.eps_fin, deb_expl=0, fin_expl=args.fin_expl,num_actions=num_samples)
+        if args.exploration_type == 'EpsGreedy':
+            exploration_atk = EpsGreedy(eps_deb=args.eps_deb, eps_fin=args.eps_fin, deb_expl=0, fin_expl=args.fin_expl,num_actions=num_samples)
+            exploration_def = EpsGreedy(eps_deb=args.eps_deb, eps_fin=args.eps_fin, deb_expl=0, fin_expl=args.fin_expl,num_actions=num_samples)
+        elif args.exploration_type == 'Combinatorial':
+            exploration_atk = CombinatorialExplProcess(0,args.net_size,get_combinatorial_actions(args.net_size,args.degree))
+            exploration_def = CombinatorialExplProcess(1,args.net_size,get_combinatorial_actions(args.net_size,args.degree))
+        else:
+            print(f'Exploration Process {args.exploration_type} not recognized.')
+            exit()
 
         qmodel = MultiCriticMlp(gymSpace2dim(obs_sp)[1],args.degree*gymSpace2dim(obs_sp)[1],args.degree*gymSpace2dim(obs_sp)[1],hidden_size=args.mlp_hidden_size) #action feature space same as obs space
         toc_q = time.perf_counter()
         #print('time to init qmodel: ',toc_q -tic)
         attacker_agent = CFA_MinimaxDQNCriticAgent(qmodel,embed_model,obs_sp,act_sp,act_sp,fact_experience,cfact_experience,training_env,args.training_epochs,args.topo_eps,act_degree=args.degree,index=0,
-            exploration=exploration,batch_size=args.batch_size*num_samples,name='Attacker',lr=args.learning_rate,sched_step=args.sched_step,sched_gamma=args.sched_gamma,
+            exploration=exploration_atk,batch_size=args.batch_size*num_samples,name='Attacker',lr=args.learning_rate,sched_step=args.sched_step,sched_gamma=args.sched_gamma,
             train=args.train,model=attacker_model_file)
         defender_agent = CFA_MinimaxDQNCriticAgent(qmodel,embed_model,obs_sp,act_sp,act_sp,fact_experience,cfact_experience,training_env,args.training_epochs,args.topo_eps,act_degree=args.degree,index=1,
-            exploration=exploration,batch_size=args.batch_size*num_samples,name='Defender',lr=args.learning_rate,sched_step=args.sched_step,sched_gamma=args.sched_gamma,
+            exploration=exploration_def,batch_size=args.batch_size*num_samples,name='Defender',lr=args.learning_rate,sched_step=args.sched_step,sched_gamma=args.sched_gamma,
             train=args.train,model=defender_model_file)
 
         #     env = SimpleCascadeEnv(args.net_size,args.p,args.p,'File',discrete_obs=args.discrete_obs,degree=args.degree,
@@ -262,6 +272,7 @@ if __name__ == '__main__':
         #         defender_agent = MinimaxQAgent(obs_sp, act_sp, act_sp,act_degree=args.degree,index=1, batch_size=args.batch_size*num_samples,
         #             name = 'Defender',train=False,model=defender_model_file)
         #     else:
+        
         qmodel=MultiCriticMlp(gymSpace2dim(obs_sp)[1],args.degree*gymSpace2dim(obs_sp)[1],args.degree*gymSpace2dim(obs_sp)[1],hidden_size=args.mlp_hidden_size) #action feature space same as obs space
         attacker_agent = CFA_MinimaxDQNCriticAgent(copy.deepcopy(qmodel),obs_sp,act_sp,act_sp,"ReplayMemory-1000","ReplayMemory-1000",env.scm,act_degree=args.degree,index=0,name='Attacker',train=False,model=attacker_model_file)
         defender_agent = CFA_MinimaxDQNCriticAgent(copy.deepcopy(qmodel),obs_sp,act_sp,act_sp,"ReplayMemory-1000","ReplayMemory-1000",env.scm,act_degree=args.degree,index=1,name='Defender',train=False,model=defender_model_file)
