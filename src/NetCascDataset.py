@@ -6,7 +6,7 @@ import networkx as nx
 import random
 
 class NetCascDataset(Dataset):
-    def __init__(self,data_dir,gnn=False):
+    def __init__(self,data_dir,casc_type,gnn=False):
         self.gnn = gnn
         topo_dir = data_dir + 'topologies/'
         topologies = []
@@ -15,22 +15,21 @@ class NetCascDataset(Dataset):
             if filename.endswith('.edgelist'):
                 topo_path = os.path.join(topo_dir, filename)
                 G = nx.read_edgelist(topo_path,nodetype=int)
-
-                thresh_filename = filename[:-9] + '_thresh.npy'
+                thresh_filename = filename[:-9] + f'_thresh.npy'
                 thresh_path = os.path.join(topo_dir,thresh_filename)
                 if os.path.isfile(thresh_path):
                     thresholds.append(np.load(thresh_path))
                 topologies.append(G)
 
-        casc_data = np.load(data_dir + 'trial_data.npy')
+        casc_data = np.load(data_dir + f"{casc_type}casc_trialdata.npy")
         self.action_data = casc_data[:,:,:-1].astype(int)
         self.reward_data = casc_data[:,:,-1]
         if len(thresholds) > 0: 
             thresholds = np.array(thresholds)
             max_t = np.min(thresholds, axis=1, keepdims=True)
             min_t = np.max(thresholds, axis=1, keepdims=True)
-            norm_thresh = [2*(t-min_t[i])/(max_t[i]-min_t[i])-1 if (max_t[i]-min_t[i]) != 0 else 0 for i,t in enumerate(thresholds)]
-            norm_thresh = torch.tensor(np.array(norm_thresh))
+            norm_thresh = [2*(t-min_t[i])/(max_t[i]-min_t[i])-1 if (max_t[i]-min_t[i]) != 0 else np.zeros(thresholds.shape[1]) for i,t in enumerate(thresholds)]
+            norm_thresh = torch.tensor(np.stack(norm_thresh))
         if self.gnn:
             if len(thresholds) > 0:
                 self.net_features = norm_thresh.reshape([-1,1])
