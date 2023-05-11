@@ -67,9 +67,12 @@ Tensorboard Regex
 
 ----------------------------------------------------------------------------------------------------------
 Supervised Learning
-python src/create_SL_data_set.py --net_size 5 --num_topologies 100 --num_trials 10 
+python src/create_SL_data_set.py --train True --net_size 5 --num_topologies 100 --num_trials 10 
 
-python src/SL_train.py --train_data_dir './data/5C2/training_data/100topo_10trials_thresholdcasc/' --val_data_dir './data/5C2/validation_data/' --exp_name 'small_data2' --val_freq 10 --num_epochs 100000 --sched_step 200000
+python src/create_SL_data_set.py --net_size 5 --num_topologies 10 --calc_nash True
+
+
+python src/SL_train.py --train_data_dir ./data/5C2/training_data/100topo_10trials_RandomExpl/ --val_data_dir ./data/5C2/validation_data/10topo_NashEQ_RandomExpl/ --exp_name small_data_test --val_freq 1 --num_epochs 5 --sched_step 10
 
 python src/generate_networks.py --net_save_dir './data/5C2/validation_data/topologies' --nash_eqs_dir './data/5C2/validation_data/nash_eqs' --num_nodes 5 --num2gen 10 --p 0.4 ----cascade_type threshold
 

@@ -19,12 +19,12 @@ class Validator():
 		num_nodes = gymSpace2dim(self.obs_space)[0]
 		self.all_actions = get_combinatorial_actions(num_nodes,2)
 
+		# if os.path.isdir(nash_eqs_dir):
 		#Get Nash EQs
-		if os.path.isdir(nash_eqs_dir):
-			fns = [f for f in os.listdir(nash_eqs_dir)]
-			fns.sort()
-			self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'{envs[0].cascade_type}Casc_eq_' in f]
-			self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'{envs[0].cascade_type}Casc_util_' in f]
+		fns = [f for f in os.listdir(nash_eqs_dir)]
+		fns.sort()
+		self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'eq_' in f]
+		self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'util_' in f]
 
 	def validate(self,q_model,embed_model=None):
 		nash_eq_divergences = []
@@ -41,7 +41,6 @@ class Validator():
 
 				atk_pd,atk_Q_val = atk_policy.get_policy(t_obs,feat_actions)
 				def_pd,def_Q_val = def_policy.get_policy(t_obs,feat_actions)
-
 				impl_policy = np.array([atk_pd,def_pd])
 				nashEQ_policy = self.nashEQ_policies[i]
 				kl = entropy(nashEQ_policy.flatten(),impl_policy.flatten())
@@ -54,6 +53,7 @@ class Validator():
 							abs_errl = np.abs(errl)
 							err.append(abs_errl)
 				util_errs.append(np.mean(err))
+			print(nash_eq_divergences)
 			return np.mean(nash_eq_divergences),np.mean(util_errs)
 
 

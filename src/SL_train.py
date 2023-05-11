@@ -37,7 +37,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 
-	dataset = NetCascDataset(args.train_data_dir)
+	dataset = NetCascDataset(args.train_data_dir,args.cascade_type)
 	data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
 	if args.use_gnn:
@@ -46,6 +46,8 @@ if __name__ == '__main__':
 		(feat_topo,_), _ = dataset.__getitem__(0)
 		num_nodes, embed_size = feat_topo.shape
 
+	if not os.path.isdir(args.log_dir):
+		os.mkdir(args.log_dir)
 	hparams = {"training_epochs": args.num_epochs, "learning_rate": args.learning_rate, "sched_step": args.sched_step, "sched_gamma":args.sched_gamma,
 				"cascade_type": args.cascade_type, "batch_size": args.batch_size,"mlp_hidden_size": args.mlp_hidden_size, 
 				"net_size": num_nodes, "embed_size": embed_size}
@@ -55,12 +57,12 @@ if __name__ == '__main__':
 	q_model = MultiCriticMlp(embed_size,embed_size*2,embed_size*2,hidden_size=args.mlp_hidden_size)  # Replace with your own model architecture
 	model_save_dir = args.model_save_dir + f'{num_nodes}C2/{args.exp_name}/'
 	if not os.path.isdir(model_save_dir):
-		os.mkdir(model_save_dir)
+		os.makedirs(model_save_dir)
 
 	#init Validator
 	p = 2/num_nodes
 	topology_dir = args.val_data_dir + 'topologies/'
-	nash_eqs_dir = args.val_data_dir + 'nash_eqs/'
+	nash_eqs_dir = args.val_data_dir + f'{args.cascade_type}casc_NashEQs/'
 	test_envs = [NetworkCascEnv(num_nodes,p,p,'File',cascade_type=args.cascade_type,
 				filename = os.path.join(topology_dir,f)) for f in os.listdir(topology_dir) if 'thresh' not in f]
 	V = Validator(test_envs,nash_eqs_dir=nash_eqs_dir)
@@ -85,14 +87,16 @@ if __name__ == '__main__':
 				B = feat_topo.shape[0]
 				atk_acts = actions[:,:2]
 				def_acts = actions[:,2:]
-
+			# mod_acts = atk_acts.unsqueeze(-1).expand(-1, -1, embed_size)
+			# print(mod_acts)
+			# print(mod_acts.dtype)
 			#select rows from featurized topology corresponding to nodes attacked
-			feat_atk = torch.gather(feat_topo, 2, atk_acts.unsqueeze(-1).expand(-1, -1, embed_size))
+			feat_atk = torch.gather(feat_topo, 2, atk_acts.unsqueeze(-1).expand(-1, -1, embed_size).type(torch.int64))
 
 			#flatten into 1 dimension (not including batch dim)
 			feat_atk = feat_atk.view(B,-1)
 
-			feat_def = torch.gather(feat_topo, 2, def_acts.unsqueeze(-1).expand(-1, -1, embed_size))
+			feat_def = torch.gather(feat_topo, 2, def_acts.unsqueeze(-1).expand(-1, -1, embed_size).type(torch.int64))
 			feat_def = feat_def.view(B,-1)
 
 			feat_topo_mean = torch.mean(feat_topo,dim=1)
@@ -117,22 +121,23 @@ if __name__ == '__main__':
 		writer.add_scalar("Training/training_loss",epoch_loss,epoch)
 
 		#Perform Validation
-		if epoch % args.val_freq == 0 or epoch == args.num_epochs-1:
-			q_model.eval()
-			nash_eq_div,util_err = V.validate(q_model)
-			writer.add_scalar("Validation/nash_eq_div",nash_eq_div,epoch)
-			writer.add_scalar("Validation/util_err",util_err,epoch)
+		nash_eq_div,util_err = (0,0)
+		# if epoch % args.val_freq == 0 or epoch == args.num_epochs-1:
+		# 	q_model.eval()
+		# 	nash_eq_div,util_err = V.validate(q_model)
+		# 	writer.add_scalar("Validation/nash_eq_div",nash_eq_div,epoch)
+		# 	writer.add_scalar("Validation/util_err",util_err,epoch)
 
-			if nash_eq_div < best_div:
-				#print(f'Epoch {epoch}: Nash EQ of {nash_eq_div} is new best. Saving model.')
-				model_save_path = os.path.join(model_save_dir,f'best_div.pt')
-				torch.save(q_model.state_dict(),model_save_path)
-				best_div = nash_eq_div
-			if util_err < best_err:
-				#print(f'Epoch {epoch}: Util err of {util_err} is new best. Saving model.')
-				model_save_path = os.path.join(model_save_dir,f'best_err.pt')
-				torch.save(q_model.state_dict(),model_save_path)	
-			q_model.train()
+		# 	if nash_eq_div < best_div:
+		# 		#print(f'Epoch {epoch}: Nash EQ of {nash_eq_div} is new best. Saving model.')
+		# 		model_save_path = os.path.join(model_save_dir,f'best_div.pt')
+		# 		torch.save(q_model.state_dict(),model_save_path)
+		# 		best_div = nash_eq_div
+		# 	if util_err < best_err:
+		# 		#print(f'Epoch {epoch}: Util err of {util_err} is new best. Saving model.')
+		# 		model_save_path = os.path.join(model_save_dir,f'best_err.pt')
+		# 		torch.save(q_model.state_dict(),model_save_path)	
+		# 	q_model.train()
 
 		epoch_progress_bar.set_postfix({'train_loss': epoch_loss,'util_err': util_err,'nash_eq_div': nash_eq_div})
 		epoch_progress_bar.update()
