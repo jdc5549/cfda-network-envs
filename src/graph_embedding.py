@@ -5,6 +5,47 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 
+def heuristic_action_embedding(net,bounds,action_pair):
+    num_nodes = net.number_of_nodes()
+    n0 = sorted(net.nodes())[0]
+    metrics = []
+    degree_centrality = sum([central.degree_centrality(net)[a+n0] for a in action_pair])
+    min_c = bounds[0][0]
+    max_c = bounds[0][1]
+    degree_centrality = 2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0
+    metrics.append(torch.tensor(degree_centralities))
+
+    closeness_centrality = sum([central.closeness_centrality(net)[a+n0] for a in action_pair])
+    min_c = bounds[1][0]
+    max_c = bounds[1][1]
+    closeness_centrality = 2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0
+    metrics.append(torch.tensor(closeness_centrality))
+
+    betweenness_centrality = sum([central.betweenness_centrality(net)[a+n0] for a in action_pair])
+    min_c = bounds[2][0]
+    max_c = bounds[2][1]
+    betweenness_centrality = 2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0
+    metrics.append(torch.tensor(betweenness_centrality))
+
+    eigenvector_centrality = sum([central.eigenvector_centrality(net)[a+n0] for a in action_pair])
+    min_c = bounds[3][0]
+    max_c = bounds[3][1]
+    eigenvector_centrality = 2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0
+    metrics.append(torch.tensor(eigenvector_centrality))
+
+    node_distance = nx.shortest_path_length(net,source=n0+action_pair[0],target=n0+action_pair[1])
+    min_c = bounds[4][0]
+    max_c = bounds[4][1]
+    node_distance = 2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0
+    metrics.append(torch.tensor(node_distance))
+
+    common_neighbors = nx.common_neighbors(net,n0+action_pair[0],n0+action_pair[1])
+    min_c = bounds[5][0]
+    max_c = bounds[5][1]
+    common_neighbors = 2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0
+    metrics.append(torch.tensor(common_neighbors))
+
+
 def get_featurized_obs(batch_obs,embed_model=None):
     #tic = time.perf_counter()
     feat_obs_list = []
@@ -65,11 +106,11 @@ def heuristic_feature_embedding(net):
     #print('Degree: ', toc - tic)
 
     #tic = time.perf_counter()
-    closeness_centralities = [central.closeness_centrality(net)[i+n0] for i in range(num_nodes)]
-    max_c = max(closeness_centralities)
-    min_c = min(closeness_centralities)
-    closeness_centralities = [2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0 for c in closeness_centralities]
-    metrics.append(torch.tensor(closeness_centralities))
+    # closeness_centralities = [central.closeness_centrality(net)[i+n0] for i in range(num_nodes)]
+    # max_c = max(closeness_centralities)
+    # min_c = min(closeness_centralities)
+    # closeness_centralities = [2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0 for c in closeness_centralities]
+    # metrics.append(torch.tensor(closeness_centralities))
     #toc = time.perf_counter()
     #print('Closeness: ', toc - tic)
 
@@ -92,20 +133,20 @@ def heuristic_feature_embedding(net):
     #print('Betweeness: ', toc - tic)
 
     #tic = time.perf_counter()
-    eigenvector_centralities = [central.eigenvector_centrality(net)[i+n0] for i in range(num_nodes)]
-    max_c = max(eigenvector_centralities)
-    min_c = min(eigenvector_centralities)
-    eigenvector_centralities = [2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0 for c in eigenvector_centralities]
-    metrics.append(torch.tensor(eigenvector_centralities))
+    # eigenvector_centralities = [central.eigenvector_centrality(net)[i+n0] for i in range(num_nodes)]
+    # max_c = max(eigenvector_centralities)
+    # min_c = min(eigenvector_centralities)
+    # eigenvector_centralities = [2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0 for c in eigenvector_centralities]
+    # metrics.append(torch.tensor(eigenvector_centralities))
     #toc = time.perf_counter()
     #print('Eigen: ', toc - tic)
 
     #tic = time.perf_counter()
-    second_order_centralities = [central.second_order_centrality(net)[i+n0] for i in range(num_nodes)]
-    max_c = max(second_order_centralities)
-    min_c = min(second_order_centralities)
-    second_order_centralities = [2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0 for c in second_order_centralities]
-    metrics.append(torch.tensor(second_order_centralities))
+    # second_order_centralities = [central.second_order_centrality(net)[i+n0] for i in range(num_nodes)]
+    # max_c = max(second_order_centralities)
+    # min_c = min(second_order_centralities)
+    # second_order_centralities = [2*(c-min_c)/(max_c-min_c)-1 if (max_c-min_c) != 0 else 0 for c in second_order_centralities]
+    # metrics.append(torch.tensor(second_order_centralities))
     #toc = time.perf_counter()
     #print('Second Order: ', toc - tic)
 

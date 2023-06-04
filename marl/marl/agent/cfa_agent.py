@@ -4,7 +4,7 @@ from ..model import MultiQTable
 from marl.tools import gymSpace2dim,get_combinatorial_actions
 from marl.experience import make
 from ..experience import ReplayMemory, transition_tuple
-from cascade_cfa import Counterfactual_Cascade_Fns
+from cascade_cfda import Counterfactual_Cascade_Fns
 from graph_embedding import get_featurized_obs
 
 import copy
@@ -140,7 +140,7 @@ class CFA_MinimaxDQNCriticAgent(MinimaxDQNCriticAgent,MATrainable):
 		# print('fac actions: ',fac_actions)
 		# print('old_CCs:',self.CCs)
 		# print('new_CCs:',CCs_new)
-		cfac_count = 0
+		cfac_counts = 0
 		# print('New CC: ',CCs_new)
 		# print('Old CC count: ',len(self.CCs))	
 		for i,a in enumerate(fac_actions):

@@ -308,75 +308,36 @@ class MinimaxQCriticPolicy(ModelBasedPolicy):
     def __init__(self, model, observation_space=None, action_space = None,player=0,all_actions=[],act_degree=1):
         self.observation_space = observation_space
         self.action_space = action_space
-        self.model = marl.model.make(model, obs_sp=gymSpace2dim(self.observation_space), p1_action_space=gymSpace2dim(self.action_space),p2_action_space=gymSpace2dim(self.action_space))
+        self.model = model
         self.player = player
         self.policy = None
         self.degree = act_degree
         self.all_actions = all_actions
 
-    def _get_state_row(self,i):
-        si = np.zeros(self.num_p2_acts,state.numel())
-        p1i = np.zeros(self.num_p2_acts,featurized_actions[0].numel())
-        p2i = np.zeros(self.num_p2_acts,featurized_actions[0].numel())
-        for j in range(self.num_p2_acts):
-            si[j] = 0
-        return ui
-
     def get_policy(self,state,featurized_actions):
         #print('t_obs in get_policy:', state)
         num_player_actions = gymSpace2dim(self.action_space)
         num_p1_acts = gymSpace2dim(self.action_space)
-        self.num_p2_acts = gymSpace2dim(self.action_space)
+        num_p2_acts = gymSpace2dim(self.action_space)
         c = np.zeros(num_player_actions+1)
         c[num_player_actions] = -1
-        U = np.zeros([num_p1_acts,self.num_p2_acts])
+        U = np.zeros([num_p1_acts,num_p2_acts])
         # U = (-2*self.player +1) * np.array([[0.1 for i in range(10)],[0.1 for i in range(10)],
         #     [0.2 for i in range(10)],[0.6 for i in range(10)],[0.1 for i in range(10)],
         #     [0.2 for i in range(10)],[0.2 for i in range(10)],[0.2 for i in range(10)],
         #     [0.1 for i in range(10)],[0.3 for i in range(10)]])
         #np.fill_diagonal(U,0)
         #U_noisy = U + np.random.randn(num_p1_acts,num_p2_acts)*1e-4
-        #if num_p1_acts < mp.cpu_count()-2
-        #state_t = state.repeat(num_p1_acts,self.num_p2_acts)
-        # singleproc_tic = time.perf_counter()
-        # #old
-        # state_t = torch.zeros(num_p1_acts,self.num_p2_acts,state.numel())   
-        # p1_act_t = torch.zeros(num_p1_acts,self.num_p2_acts,featurized_actions[0].numel())        
-        # p2_act_t = torch.zeros(num_p1_acts,self.num_p2_acts,featurized_actions[0].numel())
-        # for i in range(num_p1_acts):
-        #     for j in range(self.num_p2_acts):
-        #         state_t[i,j] = state
-        #         p1_act_t[i,j] = featurized_actions[i]
-        #         p2_act_t[i,j] = featurized_actions[j]
-        # U = self.Q(state_t,p1_act_t,p2_act_t)
-        # print(U)
-        # singleproc_toc = time.perf_counter()
-        # print(f'single proc time to get state mat: {singleproc_toc-singleproc_tic} seconds')
-        #new 
-        #singleproc_tic = time.perf_counter()
-        state_t = state.repeat(num_p1_acts,self.num_p2_acts,1)
+        state_t = state.repeat(num_p1_acts,num_p2_acts,1)
         p1_act_t = torch.unsqueeze(featurized_actions,dim=1)#torch.zeros(num_p1_acts,self.num_p2_acts,featurized_actions[0].numel())
-        p1_act_t = p1_act_t.expand(num_p1_acts,self.num_p2_acts,featurized_actions[0].numel())
+        p1_act_t = p1_act_t.expand(num_p1_acts,num_p2_acts,featurized_actions[0].numel())
         p2_act_t = torch.unsqueeze(featurized_actions,dim=0)
-        p2_act_t = p2_act_t.expand(num_p1_acts,self.num_p2_acts,featurized_actions[0].numel())
-        U = torch.squeeze(self.Q(state_t,p1_act_t,p2_act_t)).cpu().detach().numpy()*(-2*self.player +1)
-        #singleproc_toc = time.perf_counter()
-        #print(f'single proc time to get state mat: {singleproc_toc-singleproc_tic} seconds')
-        #exit()
-        # multiproc_tic = time.perf_counter()
-        # i_vals = [i for i in range(num_p1_acts)]
-        # state_t = torch.repeat(state)
-        # with mp.Pool(processes=min([num_p1_acts,mp.cpu_count()-2])) as pool:
-        #     U = np.array(pool.map(self._get_state_row, i_vals))
-        # pool.join()
-        # mutliproc_toc = time.perf_counter()
-        # print(f'multi proc get Umat: {mutliproc_toc-multiproc_tic} seconds')
-        # exit()
+        p2_act_t = p2_act_t.expand(num_p1_acts,num_p2_acts,featurized_actions[0].numel())
+        U = torch.squeeze(self.Q(state_t,p1_act_t,p2_act_t)).detach().cpu().numpy()*(-2*self.player +1)
         if self.player == 0:
             U_calc = -U.T #LP package requires the player to be the column player
         else:
             U_calc = -U
-        #print('U_calc: ',U_calc)
         A_ub = np.hstack((U_calc,np.ones((num_player_actions,1))))
         b_ub = np.zeros(num_player_actions)
         A_eq = np.ones((1,num_player_actions+1))
@@ -384,7 +345,7 @@ class MinimaxQCriticPolicy(ModelBasedPolicy):
         b_eq = 1
         bounds = [(0,None) for i in range(num_player_actions+1)]
         bounds[num_player_actions] = (None,None)
-        res = linprog(c,A_ub=A_ub,b_ub=b_ub,A_eq=A_eq,b_eq=b_eq,bounds=bounds,options={'maxiter': 100,'tol': 1e-6})
+        res = linprog(c,A_ub=A_ub,b_ub=b_ub,A_eq=A_eq,b_eq=b_eq,bounds=bounds,options={'maxiter': 1000,'tol': 1e-6})
 
         if not res["success"]:
             print("Failed to Optimize LP with exit status ",res["status"])
@@ -406,6 +367,106 @@ class MinimaxQCriticPolicy(ModelBasedPolicy):
             retry_lim = 100
             if policy is None:
                 policy, value = self.get_policy(t_state,featurized_actions)
+            try:
+                pd = Categorical(torch.tensor(policy))
+            except:
+                print("Failed util: ",value)
+                print("Failed with policy:", policy)
+                pd = Categorical(1/len(policy)*torch.ones_like(torch.tensor(policy)))
+            actions = []
+            num_samples = num_actions / self.degree
+            for i in range(num_actions):
+                retries=0
+                a = pd.sample().item()
+                while a in actions:
+                    if retries < retry_lim:
+                        a = pd.sample().item()
+                        retries += 1
+                    else:
+                        a = self.action_space.sample()
+                if num_samples == 1:
+                    return self.all_actions[a]
+                else:  
+                    if type(self.all_actions[a]) == list:
+                        for act in self.all_actions[a]: actions.append(act)          
+                    else:
+                        actions.append(self.all_actions[a])  
+            actions.sort()
+            return actions
+
+    @property
+    def Q(self):
+        return self.model
+
+class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
+    """
+    The class of policies based on a Q critic-style function with two player zero sum reward
+    
+    :param model: (Model or torch.nn.Module) The q-value model 
+    :param observation_space: (gym.Spaces) The observation space
+    :param action_space: (gym.Spaces) The action space
+    """
+    def __init__(self, model, action_space = None,player=0,all_actions=[],act_degree=1):
+        self.action_space = action_space
+        self.model = model
+        self.player = player
+        self.policy = None
+        self.degree = act_degree
+        self.all_actions = all_actions
+
+    def get_policy(self,state,featurized_actions):
+        #print('t_obs in get_policy:', state)
+        num_player_actions = gymSpace2dim(self.action_space)
+        num_p1_acts = gymSpace2dim(self.action_space)
+        num_p2_acts = gymSpace2dim(self.action_space)
+        c = np.zeros(num_player_actions+1)
+        c[num_player_actions] = -1
+        U = np.zeros([num_p1_acts,num_p2_acts])
+        # U = (-2*self.player +1) * np.array([[0.1 for i in range(10)],[0.1 for i in range(10)],
+        #     [0.2 for i in range(10)],[0.6 for i in range(10)],[0.1 for i in range(10)],
+        #     [0.2 for i in range(10)],[0.2 for i in range(10)],[0.2 for i in range(10)],
+        #     [0.1 for i in range(10)],[0.3 for i in range(10)]])
+        #np.fill_diagonal(U,0)
+        #U_noisy = U + np.random.randn(num_p1_acts,num_p2_acts)*1e-4
+        p1_act_t = torch.unsqueeze(featurized_actions,dim=1)#torch.zeros(num_p1_acts,self.num_p2_acts,featurized_actions[0].numel())
+        p1_act_t = p1_act_t.expand(num_p1_acts,num_p2_acts,featurized_actions[0].numel())
+        p2_act_t = torch.unsqueeze(featurized_actions,dim=0)
+        p2_act_t = p2_act_t.expand(num_p1_acts,num_p2_acts,featurized_actions[0].numel())
+        out = torch.squeeze(self.Q(state,p1_act_t,p2_act_t)).detach()*(-2*self.player +1)
+        U = torch.mean(out,dim=-1).cpu().numpy()
+
+        if self.player == 0:
+            U_calc = -U.T #LP package requires the player to be the column player
+        else:
+            U_calc = -U
+        A_ub = np.hstack((U_calc,np.ones((num_player_actions,1))))
+        b_ub = np.zeros(num_player_actions)
+        A_eq = np.ones((1,num_player_actions+1))
+        A_eq[:,num_player_actions] = 0
+        b_eq = 1
+        bounds = [(0,None) for i in range(num_player_actions+1)]
+        bounds[num_player_actions] = (None,None)
+        res = linprog(c,A_ub=A_ub,b_ub=b_ub,A_eq=A_eq,b_eq=b_eq,bounds=bounds,options={'maxiter': 1000,'tol': 1e-6})
+
+        if not res["success"]:
+            print("Failed to Optimize LP with exit status ",res["status"])
+        value = res["fun"]
+        policy = res["x"][0:num_player_actions]
+        # print('policy: ', policy)
+        # if self.player == 1:
+        #     exit()
+        return policy,U
+
+    def __call__(self, state,num_actions=1,policy=None):
+        if self.degree > 1:
+            featurized_actions = torch.stack([state[action].flatten() for action in self.all_actions])
+        else:
+            featurized_actions = torch.tensor(state)            
+        with torch.no_grad():
+            retries = 0
+            retry_lim = 100
+            if policy is None:
+                policy, value = self.get_policy(featurized_actions)
             try:
                 pd = Categorical(torch.tensor(policy))
             except:

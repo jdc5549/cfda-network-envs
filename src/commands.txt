@@ -67,13 +67,24 @@ Tensorboard Regex
 
 ----------------------------------------------------------------------------------------------------------
 Supervised Learning
-python src/create_SL_data_set.py --train True --net_size 5 --num_topologies 100 --num_trials 10 
+python src/create_SL_data_set.py --train True --net_size 5 --num_topologies 20000 --num_trials 100 --exploration_type CDME
 
-python src/create_SL_data_set.py --net_size 5 --num_topologies 10 --calc_nash True
+python src/create_subact_dataset.py --ego_graph_size 10 --num_subact_targets 5 --num_subact_sets 20 --num_trials_sub 100 --calc_nash_ego True
 
+python src/create_subact_dataset.py --ego_graph_size 25 --num_subact_targets 5 --num_subact_sets 80 --num_trials_sub 100 --load_dir data/Ego/25C2/ego_NashEQ/
 
-python src/SL_train.py --train_data_dir ./data/5C2/training_data/100topo_10trials_RandomExpl/ --val_data_dir ./data/5C2/validation_data/10topo_NashEQ_RandomExpl/ --exp_name small_data_test --val_freq 1 --num_epochs 5 --sched_step 10
+python src/create_SL_data_set.py --train True --exploration_type 'CDME' --net_size 5 --load_dir data/5C2/validation_data/1topo_NashEQ/ --num_trials 100 --num_topologies 1
 
 python src/generate_networks.py --net_save_dir './data/5C2/validation_data/topologies' --nash_eqs_dir './data/5C2/validation_data/nash_eqs' --num_nodes 5 --num2gen 10 --p 0.4 ----cascade_type threshold
 
-python src/SL_validate.py  --data_dir './data/5C2/validation_data/' --q_model_path './models/SL/5C2/test.pt' --net_size 5
+python src/SL_validate.py  --data_dir './data/5C2/validation_data/2topo_NashEQ/' --q_model_path './models/SL/5C2/garbage_test/best_div.pt' --net_size 5 --mlp_hidden_size 128
+
+subact training
+python src/subact_train.py --ego_data_dir data/Ego/7C2/ego_NashEQ/ --subact_data_dir data/Ego/7C2/ego_NashEQ/5sets_5targets_100trials_RandomCycleExpl/ --exp_name 'garbage_test' --mlp_hidden_depth 2 --num_epochs 100 --sched_step 1500 --val_freq 25 --batch_size 64 --mlp_hidden_size 64
+
+cuda 0 training
+python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl/ --exp_name '25_5C2_80sets3' --mlp_hidden_depth 3 --num_epochs 10000 --sched_step 5000 --val_freq 100 --batch_size 256 --device cuda:0
+
+cuda 1 training
+python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl/ --exp_name '25_5C2_80sets1' --mlp_hidden_depth 3 --num_epochs 10000 --sched_step 5000 --val_freq 100 --batch_size 256 --device cuda:1
+

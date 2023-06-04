@@ -11,27 +11,26 @@ from utils import get_combinatorial_actions
 from graph_embedding import get_featurized_obs
 from NetCascDataset import NetCascDataset
 sys.path.append('./marl/')
-from marl.policy import MinimaxQCriticPolicy,SubactMinimaxQCriticPolicy
+from marl.policy import MinimaxQCriticPolicy
 from marl.model.nn.mlpnet import MultiCriticMlp
 from marl.tools import gymSpace2dim
 
 class Validator():
-	def __init__(self,envs,embedding,subact_sets=None,dataset=None,nash_eqs_dir=None,device='cpu',exploiter_model_dir=None):
+	def __init__(self,envs,dataset=None,nash_eqs_dir=None,device='cpu',exploiter_model_dir=None):
 		self.envs = envs
-		self.embedding = embedding
 		self.device = device
 		self.obs_space = envs[0].observation_space
 		self.act_space = envs[0].action_space
 		num_nodes = gymSpace2dim(self.obs_space)[0]
 		self.all_actions = get_combinatorial_actions(num_nodes,2)
-		self.train_set = self.get_validation_set(subact_sets)
+
 		# if os.path.isdir(nash_eqs_dir):
 		#Get Nash EQs
 		fns = [f for f in os.listdir(nash_eqs_dir)]
 		fns.sort()
 		if nash_eqs_dir is not None and os.path.isdir(nash_eqs_dir):
-			self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'eq' in f]
-			self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'util' in f]
+			self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'eq_' in f]
+			self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'util_' in f]
 		else:
 			self.nashEQ_policies = []
 			self.utils = []
@@ -42,30 +41,9 @@ class Validator():
 		else:
 			self.data_loader = None
 
-	def get_validation_set(self,subact_sets):
-		train_set = []
-		for subset in subact_sets:
-			all_act_indicies = []
-			for i in range(len(subset)):
-				for j in range(i+1,len(subset)):
-					train_act = (subset[i],subset[j])
-					all_act_idx = self.all_actions.index(train_act)
-					all_act_indicies.append(all_act_idx)
-			for a1 in all_act_indicies:
-				for a2 in all_act_indicies:
-					train_set.append((a1,a2))
-		train_set = list(set(train_set))
-		# validation_set = []
-		# for i in range(len(self.all_actions)):
-		# 	for j in range(len(self.all_actions)):
-		# 		if (i,j) not in train_set:
-		# 			validation_set.append((i,j))
-		return train_set
-
-	def validate(self,q_model,feat_topo,embed_model=None,device='cpu'):
+	def validate(self,q_model,embed_model=None,device='cpu'):
 		pred_err = None
 		util_errs = []
-		val_errs = []
 		nash_eq_divergences = []
 		criterion = nn.SmoothL1Loss()
 		with torch.no_grad():
@@ -83,29 +61,26 @@ class Validator():
 					reward = reward.to(device)
 
 					#select rows from featurized topology corresponding to nodes attacked
-					feat_atk = self.embedding.embed_action(atk_acts)#feat_topo[torch.arange(feat_topo.size(0))[:, None], atk_acts, :]
+					feat_atk = feat_topo[torch.arange(feat_topo.size(0))[:, None], atk_acts, :]
 					#flatten into 1 dimension (not including batch dim)
-					#feat_atk = feat_atk.view(B,-1)
+					feat_atk = feat_atk.view(B,-1)
 
-					feat_def = self.embedding.embed_action(def_acts)#feat_topo[torch.arange(feat_topo.size(0))[:, None], def_acts, :]
-					#feat_def = feat_def.view(B,-1)
+					feat_def = feat_topo[torch.arange(feat_topo.size(0))[:, None], def_acts, :]
+					feat_def = feat_def.view(B,-1)
 
-					pred = q_model(feat_atk,feat_def).squeeze()
-					multi_hot_pred = torch.zeros_like(pred)
-					multi_hot_pred[pred > 0.5] = 1
-					pred_reward = torch.mean(multi_hot_pred,dim=1)
+					feat_topo_mean = torch.mean(feat_topo,dim=1)
+					pred_reward = q_model(feat_topo_mean,feat_atk,feat_def).squeeze()
 					pred_err += np.sum(np.abs((pred_reward-reward).detach().cpu().numpy()))/self.dataset.__len__()
 
 			#Compare to ground truth utility and NashEQ if available
 			if len(self.nashEQ_policies) > 0:
 				for i,env in enumerate(self.envs):
-					atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions,act_degree=2)
-					def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions,act_degree=2)
+					atk_policy = MinimaxQCriticPolicy(q_model,action_space=self.act_space,observation_space=self.obs_space,player=0,all_actions=self.all_actions,act_degree=2)
+					def_policy = MinimaxQCriticPolicy(q_model,action_space=self.act_space,observation_space=self.obs_space,player=1,all_actions=self.all_actions,act_degree=2)
 					observation = env.reset(fid=i) #torch.tensor(env.reset(fid=i)[0])
-					#feat_obs = get_featurized_obs([observation],embed_model=embed_model).detach().squeeze().to(device)
-					feat_actions = self.embedding.embed_action(torch.tensor([action for action in self.all_actions])).float().to(device)
-					#t_obs = torch.mean(feat_obs,axis=0)
-					t_obs = feat_topo.unsqueeze(0).unsqueeze(0).repeat(len(self.all_actions),len(self.all_actions),1)
+					feat_obs = get_featurized_obs([observation],embed_model=embed_model).detach().squeeze().to(device)
+					feat_actions = torch.stack([feat_obs[action].flatten() for action in self.all_actions]).float().to(device)
+					t_obs = torch.mean(feat_obs,axis=0)
 					atk_pd,atk_Q_val = atk_policy.get_policy(t_obs,feat_actions)
 					def_pd,def_Q_val = def_policy.get_policy(t_obs,feat_actions)
 					impl_policy = np.array([atk_pd,def_pd])
@@ -121,25 +96,16 @@ class Validator():
 					nash_eq_divergences.append(kl)
 					err_mat = [atk_Q_val-self.utils[i],def_Q_val+self.utils[i]]
 					err = []
-					val_err = []
-					#debug_high_err = {}
 					for j, errj in enumerate(err_mat):
 						for k, errk in enumerate(errj):
 							for l,errl in enumerate(errk):
 								abs_errl = np.abs(errl)
 								err.append(abs_errl)
-								if (k,l) not in self.train_set:
-									val_err.append(abs_errl)
-								# if abs_errl > 0.1 and j == 0:
-								# 	debug_high_err[f'{[self.all_actions[k],self.all_actions[l]]}'] = [atk_Q_val[k,l],self.utils[i][k,l]]
-					#print(debug_high_err)
-					#print(err_mat[0])
 					util_errs.append(np.mean(err))
-					val_errs.append(val_err)
-		val_err_ret = np.mean(val_errs) if len(val_errs) > 0 else None
+
 		util_err_ret = np.mean(util_errs) if len(util_errs) > 0 else None
 		nash_div_ret = np.mean(nash_eq_divergences) if len(nash_eq_divergences) > 0 else None
-		return val_err_ret,pred_err,util_err_ret,nash_div_ret
+		return pred_err,util_err_ret,nash_div_ret
 
 
 if __name__ == '__main__':	
