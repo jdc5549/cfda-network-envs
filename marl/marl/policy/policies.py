@@ -498,6 +498,102 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
     def Q(self):
         return self.model
 
+class GNNMinimaxQCriticPolicy(ModelBasedPolicy):
+    """
+    The class of policies based on a Q critic-style function with two player zero sum reward
+    
+    :param model: (Model or torch.nn.Module) The q-value model 
+    :param observation_space: (gym.Spaces) The observation space
+    :param action_space: (gym.Spaces) The action space
+    """
+    def __init__(self, model, action_space = None,player=0,all_actions=[],act_degree=1):
+        self.action_space = action_space
+        self.model = model
+        self.player = player
+        self.policy = None
+        self.degree = act_degree
+        self.all_actions = all_actions
+
+    def get_policy(self,state,featurized_actions):
+        #print('t_obs in get_policy:', state)
+        num_player_actions = gymSpace2dim(self.action_space)
+        num_p1_acts = gymSpace2dim(self.action_space)
+        num_p2_acts = gymSpace2dim(self.action_space)
+        c = np.zeros(num_player_actions+1)
+        c[num_player_actions] = -1
+        U = np.zeros([num_p1_acts,num_p2_acts])
+        # U = (-2*self.player +1) * np.array([[0.1 for i in range(10)],[0.1 for i in range(10)],
+        #     [0.2 for i in range(10)],[0.6 for i in range(10)],[0.1 for i in range(10)],
+        #     [0.2 for i in range(10)],[0.2 for i in range(10)],[0.2 for i in range(10)],
+        #     [0.1 for i in range(10)],[0.3 for i in range(10)]])
+        #np.fill_diagonal(U,0)
+        #U_noisy = U + np.random.randn(num_p1_acts,num_p2_acts)*1e-4
+        
+        out = torch.squeeze(self.Q(z,node_features,edge_index)).detach()*(-2*self.player +1)
+        U = torch.mean(out,dim=-1).cpu().numpy()
+
+        if self.player == 0:
+            U_calc = -U.T #LP package requires the player to be the column player
+        else:
+            U_calc = -U
+        A_ub = np.hstack((U_calc,np.ones((num_player_actions,1))))
+        b_ub = np.zeros(num_player_actions)
+        A_eq = np.ones((1,num_player_actions+1))
+        A_eq[:,num_player_actions] = 0
+        b_eq = 1
+        bounds = [(0,None) for i in range(num_player_actions+1)]
+        bounds[num_player_actions] = (None,None)
+        res = linprog(c,A_ub=A_ub,b_ub=b_ub,A_eq=A_eq,b_eq=b_eq,bounds=bounds,options={'maxiter': 1000,'tol': 1e-6})
+
+        if not res["success"]:
+            print("Failed to Optimize LP with exit status ",res["status"])
+        value = res["fun"]
+        policy = res["x"][0:num_player_actions]
+        # print('policy: ', policy)
+        # if self.player == 1:
+        #     exit()
+        return policy,U
+
+    def __call__(self, state,num_actions=1,policy=None):
+        if self.degree > 1:
+            featurized_actions = torch.stack([state[action].flatten() for action in self.all_actions])
+        else:
+            featurized_actions = torch.tensor(state)            
+        with torch.no_grad():
+            retries = 0
+            retry_lim = 100
+            if policy is None:
+                policy, value = self.get_policy(featurized_actions)
+            try:
+                pd = Categorical(torch.tensor(policy))
+            except:
+                print("Failed util: ",value)
+                print("Failed with policy:", policy)
+                pd = Categorical(1/len(policy)*torch.ones_like(torch.tensor(policy)))
+            actions = []
+            num_samples = num_actions / self.degree
+            for i in range(num_actions):
+                retries=0
+                a = pd.sample().item()
+                while a in actions:
+                    if retries < retry_lim:
+                        a = pd.sample().item()
+                        retries += 1
+                    else:
+                        a = self.action_space.sample()
+                if num_samples == 1:
+                    return self.all_actions[a]
+                else:  
+                    if type(self.all_actions[a]) == list:
+                        for act in self.all_actions[a]: actions.append(act)          
+                    else:
+                        actions.append(self.all_actions[a])  
+            actions.sort()
+            return actions
+
+    @property
+    def Q(self):
+        return self.model
 
 class StochasticPolicy(ModelBasedPolicy):
     """

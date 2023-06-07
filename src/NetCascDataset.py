@@ -37,6 +37,12 @@ class NetCascDataset_Subact(Dataset):
         self.action_data = casc_data[:,:-1].astype(int)
         self.reward_data = casc_data[:,-1]
 
+        self.z_action_data = torch.zeros((self.action_data.shape[0],self.thresholds.shape[0]),dtype=torch.int32)
+        for i,a in enumerate(self.action_data):
+            self.z_action_data[i][a[:2]] += 1
+            self.z_action_data[i][a[2:]] += 2
+
+
         info_fn = subact_data_dir + f"subact_{casc_type}casc_trialinfo.pkl"
         with open(info_fn,'rb') as f:
             info_data = pickle.load(f)
@@ -67,7 +73,7 @@ class NetCascDataset_Subact(Dataset):
             else:
                 self.net_features = torch.ones([len(self.topology),1])
             from torch_geometric.utils import from_networkx
-            self.edges = [from_networkx(topo).edge_index for topo in self.topology]
+            self.edges = from_networkx(self.topology).edge_index
         else:
             from graph_embedding import heuristic_feature_embedding
             num_nodes = self.topology.number_of_nodes()
@@ -101,7 +107,7 @@ class NetCascDataset_Subact(Dataset):
         # trial_idx = index % self.reward_data.shape[1]
         #if GNN return net_features and edges to pass through the GNN, else return the heuristic embedding
         if self.gnn: 
-            return ((self.net_features[topo_idx],self.edges[topo_idx],self.action_data[topo_idx,trial_idx]),self.reward_data[topo_idx,trial_idx])
+            return ((self.net_features,self.edges,self.z_action_data[index]),(self.reward_data[index],self.failset_onehot_data[index]))
         else:
             return ((self.feat_topo,self.action_data[index]),(self.reward_data[index],self.failset_onehot_data[index]))
 
@@ -124,6 +130,12 @@ class NetCascDataset(Dataset):
 
         casc_data = np.load(data_dir + f"{casc_type}casc_trialdata.npy")
         self.action_data = casc_data[:,:,:-1].astype(int)
+        self.z_action_data = torch.zeros((self.action_data.shape[0],self.action_data.shape[1],self.thresholds.shape[0]),dtype=torch.int32)
+        for i,topo in self.action_data:
+            for j,a in enumerate(topo):
+                self.z_action_data[i][j][a[:2]] += 1
+                self.z_action_data[i][j][a[2:]] += 2
+
         self.reward_data = casc_data[:,:,-1]
         if len(thresholds) > 0: 
             thresholds = np.array(thresholds)
@@ -170,7 +182,7 @@ class NetCascDataset(Dataset):
         trial_idx = index % self.reward_data.shape[1]
         #if GNN return net_features and edges to pass through the GNN, else return the heuristic embedding
         if self.gnn: 
-            return ((self.net_features[topo_idx],self.edges[topo_idx],self.action_data[topo_idx,trial_idx]),self.reward_data[topo_idx,trial_idx])
+            return ((self.net_features[topo_idx],self.edges[topo_idx],self.z_action_data[topo_idx,trial_idx]),self.reward_data[topo_idx,trial_idx])
         else:
             return ((self.feat_topo_data[topo_idx],self.action_data[topo_idx,trial_idx]),self.reward_data[topo_idx,trial_idx])
 

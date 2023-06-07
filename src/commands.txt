@@ -80,7 +80,7 @@ python src/generate_networks.py --net_save_dir './data/5C2/validation_data/topol
 python src/SL_validate.py  --data_dir './data/5C2/validation_data/2topo_NashEQ/' --q_model_path './models/SL/5C2/garbage_test/best_div.pt' --net_size 5 --mlp_hidden_size 128
 
 subact training
-python src/subact_train.py --ego_data_dir data/Ego/7C2/ego_NashEQ/ --subact_data_dir data/Ego/7C2/ego_NashEQ/5sets_5targets_100trials_RandomCycleExpl/ --exp_name 'garbage_test' --mlp_hidden_depth 2 --num_epochs 100 --sched_step 1500 --val_freq 25 --batch_size 64 --mlp_hidden_size 64
+python src/subact_train.py --ego_data_dir data/Ego/10C2/ego_NashEQ/ --subact_data_dir data/Ego/10C2/ego_NashEQ/20sets_5targets_100trials_RandomCycleExpl/ --exp_name 'gnn_train_test' --mlp_hidden_depth 2 --num_epochs 2000 --sched_step 1500 --val_freq 1000000 --batch_size 2 --mlp_hidden_size 16 --embed_size 16 --gnn_model GCN
 
 cuda 0 training
 python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl/ --exp_name '25_5C2_80sets3' --mlp_hidden_depth 3 --num_epochs 10000 --sched_step 5000 --val_freq 100 --batch_size 256 --device cuda:0

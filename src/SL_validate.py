@@ -16,9 +16,9 @@ from marl.model.nn.mlpnet import MultiCriticMlp
 from marl.tools import gymSpace2dim
 
 class Validator():
-	def __init__(self,envs,embedding,subact_sets=None,dataset=None,nash_eqs_dir=None,device='cpu',exploiter_model_dir=None):
+	def __init__(self,envs,embedding=None,subact_sets=None,dataset=None,nash_eqs_dir=None,device='cpu',exploiter_model_dir=None):
 		self.envs = envs
-		self.embedding = embedding
+		#self.embedding = embedding
 		self.device = device
 		self.obs_space = envs[0].observation_space
 		self.act_space = envs[0].action_space
@@ -62,7 +62,7 @@ class Validator():
 		# 			validation_set.append((i,j))
 		return train_set
 
-	def validate(self,q_model,feat_topo,embed_model=None,device='cpu'):
+	def validate(self,q_model,gnn=False,device='cpu'):
 		pred_err = None
 		util_errs = []
 		val_errs = []
@@ -73,24 +73,32 @@ class Validator():
 			if self.data_loader is not None:
 				pred_err = 0
 				for i, data in enumerate(self.data_loader):
-					(feat_topo,actions), reward = data
-					B = feat_topo.shape[0]
-					atk_acts = actions[:,:2]
-					def_acts = actions[:,2:]
-					feat_topo = feat_topo.to(device)
-					atk_acts = atk_acts.to(device)
-					def_acts = def_acts.to(device)
-					reward = reward.to(device)
+					if gnn:
+						(node_features,edge_index,z),reward = data
+						net_features.to(device)
+						edge_index.to(device)
+						z.to(device)
+						reward = reward.to(device)
+						pred = q_model(z,node_features,edge_index)
+					else:
+						(feat_topo,actions), reward = data
+						B = feat_topo.shape[0]
+						atk_acts = actions[:,:2]
+						def_acts = actions[:,2:]
+						feat_topo = feat_topo.to(device)
+						atk_acts = atk_acts.to(device)
+						def_acts = def_acts.to(device)
+						reward = reward.to(device)
 
-					#select rows from featurized topology corresponding to nodes attacked
-					feat_atk = self.embedding.embed_action(atk_acts)#feat_topo[torch.arange(feat_topo.size(0))[:, None], atk_acts, :]
-					#flatten into 1 dimension (not including batch dim)
-					#feat_atk = feat_atk.view(B,-1)
+						#select rows from featurized topology corresponding to nodes attacked
+						feat_atk = self.embedding.embed_action(atk_acts)#feat_topo[torch.arange(feat_topo.size(0))[:, None], atk_acts, :]
+						#flatten into 1 dimension (not including batch dim)
+						#feat_atk = feat_atk.view(B,-1)
 
-					feat_def = self.embedding.embed_action(def_acts)#feat_topo[torch.arange(feat_topo.size(0))[:, None], def_acts, :]
-					#feat_def = feat_def.view(B,-1)
+						feat_def = self.embedding.embed_action(def_acts)#feat_topo[torch.arange(feat_topo.size(0))[:, None], def_acts, :]
+						#feat_def = feat_def.view(B,-1)
 
-					pred = q_model(feat_atk,feat_def).squeeze()
+						pred = q_model(state,feat_atk,feat_def).squeeze()
 					multi_hot_pred = torch.zeros_like(pred)
 					multi_hot_pred[pred > 0.5] = 1
 					pred_reward = torch.mean(multi_hot_pred,dim=1)
@@ -99,15 +107,18 @@ class Validator():
 			#Compare to ground truth utility and NashEQ if available
 			if len(self.nashEQ_policies) > 0:
 				for i,env in enumerate(self.envs):
-					atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions,act_degree=2)
-					def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions,act_degree=2)
-					observation = env.reset(fid=i) #torch.tensor(env.reset(fid=i)[0])
-					#feat_obs = get_featurized_obs([observation],embed_model=embed_model).detach().squeeze().to(device)
-					feat_actions = self.embedding.embed_action(torch.tensor([action for action in self.all_actions])).float().to(device)
-					#t_obs = torch.mean(feat_obs,axis=0)
-					t_obs = feat_topo.unsqueeze(0).unsqueeze(0).repeat(len(self.all_actions),len(self.all_actions),1)
-					atk_pd,atk_Q_val = atk_policy.get_policy(t_obs,feat_actions)
-					def_pd,def_Q_val = def_policy.get_policy(t_obs,feat_actions)
+					if gnn:
+						pass
+					else:
+						atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions,act_degree=2)
+						def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions,act_degree=2)
+						#observation = env.reset(fid=i) #torch.tensor(env.reset(fid=i)[0])
+						#feat_obs = get_featurized_obs([observation],embed_model=embed_model).detach().squeeze().to(device)
+						feat_actions = self.embedding.embed_action(torch.tensor([action for action in self.all_actions])).float().to(device)
+						#t_obs = torch.mean(feat_obs,axis=0)
+						t_obs = feat_topo.unsqueeze(0).unsqueeze(0).repeat(len(self.all_actions),len(self.all_actions),1)
+						atk_pd,atk_Q_val = atk_policy.get_policy(t_obs,feat_actions)
+						def_pd,def_Q_val = def_policy.get_policy(t_obs,feat_actions)
 					impl_policy = np.array([atk_pd,def_pd])
 					best_kl = np.inf
 					#for j,pol in enumerate(self.nashEQ_policies[i]):
@@ -130,10 +141,8 @@ class Validator():
 								err.append(abs_errl)
 								if (k,l) not in self.train_set:
 									val_err.append(abs_errl)
-								# if abs_errl > 0.1 and j == 0:
-								# 	debug_high_err[f'{[self.all_actions[k],self.all_actions[l]]}'] = [atk_Q_val[k,l],self.utils[i][k,l]]
-					#print(debug_high_err)
-					#print(err_mat[0])
+								#if abs_errl > 1 and j == 0:
+								#	debug_high_err[f'{[self.all_actions[k],self.all_actions[l]]}'] = [atk_Q_val[k,l],self.utils[i][k,l]]s
 					util_errs.append(np.mean(err))
 					val_errs.append(val_err)
 		val_err_ret = np.mean(val_errs) if len(val_errs) > 0 else None

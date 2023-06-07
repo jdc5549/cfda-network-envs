@@ -86,7 +86,7 @@ class HeuristicActionEmbedding(Embedding):
         #multi-hot encoding of nodes targeted
         binary_mask = torch.zeros((nodes.size(0), self.num_nodes))
         binary_mask.scatter_(1,nodes,1)
-        features = binary_mask
+        features = self.normalize(binary_mask,0,1)
         #features[:,0:self.num_nodes] = 
         # # Calculate centrality measures for the given nodes
 

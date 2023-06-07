@@ -7,7 +7,7 @@ import os
 import sys
 import re
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader as torch_DataLoader
 from torchvision.transforms import ToTensor
 from torch.utils.tensorboard import SummaryWriter
 
@@ -15,7 +15,7 @@ from SL_validate import Validator
 from NetCascDataset import NetCascDataset_Subact
 from network_gym_env import NetworkCascEnv
 sys.path.append('./marl/')
-from models import SubActMultiCriticMlp
+from models import MLP_Critic
 from tqdm import tqdm
 
 if __name__ == '__main__':
@@ -59,16 +59,21 @@ if __name__ == '__main__':
 
 	if args.gnn_model is not None:
 		#initialize the embedding model
-		dataset = NetCascDataset_Subact(args.subact_data_dir,args.cascade_type,gnn=True)
+		dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=True)
 		(net_features,edge_index,_),_ = dataset.__getitem__(0)
 		if args.gnn_model == 'GCN':
-			from models import GCN_Encoder
-			embed_model = GCN_Encoder(args.embed_size,args.mlp_hidden_size,net_features.shape[1])
-			#feat_topo = embed_model(net_features,edge_index)
+			from models import GCN_Critic
+			q_model = GCN_Critic(args.embed_size,args.mlp_hidden_size,1,num_nodes)
+			print(f'Dataset Size: {dataset.__len__()}')
+			print(f'Input Size: {args.embed_size+num_nodes}')
+			print(f'Number of Model parameters: {sum(p.numel() for p in q_model.parameters())}')
+			q_model.to(device)
 		else:
 			print(f'GNN model {args.gnn_model} not recognized.')
 			exit()
-		Embedding = GNN_Embedding()
+		num_targets = dataset.subact_sets.shape[1]
+		from torch_geometric.loader import DataLoader as geo_DataLoader
+		data_loader = torch_DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 	else:
 		dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=False)
 		from action_embedding import HeuristicActionEmbedding
@@ -78,22 +83,22 @@ if __name__ == '__main__':
 		(feat_topo,_),(_,_) = dataset.__getitem__(0)
 		obs_embed_size = feat_topo.shape[0]
 
-	num_targets = dataset.subact_sets.shape[1]
-	data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
-
+		q_model = MLP_Critic(obs_embed_size,act_embed_size,num_nodes,hidden_size=args.mlp_hidden_size,depth=args.mlp_hidden_depth)
+		print(f'Dataset Size: {dataset.__len__()}')
+		print(f'Input Size: {obs_embed_size+2*act_embed_size}')
+		print(f'Number of Model parameters: {sum(p.numel() for p in q_model.parameters())}')
+		q_model.to(device)
+		num_targets = dataset.subact_sets.shape[1]
+		data_loader = torch_DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 	if not os.path.isdir(args.log_dir):
 		os.mkdir(args.log_dir)
 	hparams = {"training_epochs": args.num_epochs, "learning_rate": args.learning_rate, "sched_step": args.sched_step, "sched_gamma":args.sched_gamma,
 				"cascade_type": args.cascade_type, "batch_size": args.batch_size,"mlp_hidden_size": args.mlp_hidden_size, "mlp_depth": args.mlp_hidden_depth,
-				"net_size": num_nodes,"num_targets":num_targets, "embed_size": obs_embed_size}
+				"net_size": num_nodes,"num_targets":num_targets, "embed_size": args.embed_size}
 	writer = SummaryWriter(os.path.join(args.log_dir, args.exp_name))
 	writer.add_hparams(hparams,{'dummy/dummy': 0},run_name=None)#'hparams')
 
-	q_model = SubActMultiCriticMlp(obs_embed_size,act_embed_size,num_nodes,hidden_size=args.mlp_hidden_size,depth=args.mlp_hidden_depth)
-	print(f'Dataset Size: {dataset.__len__()}')
-	print(f'Input Size: {obs_embed_size+2*act_embed_size}')
-	print(f'Number of Model parameters: {sum(p.numel() for p in q_model.parameters())}')
-	q_model.to(device)
+
 
 	model_save_dir = args.model_save_dir + f'{num_nodes}_{num_targets}C2/{args.exp_name}/'
 	if not os.path.isdir(model_save_dir):
@@ -104,14 +109,14 @@ if __name__ == '__main__':
 	nash_eqs_dir = args.ego_data_dir + f'{args.cascade_type}casc_NashEQs/'
 	val_data_path = args.ego_data_dir + f'{args.cascade_type}casc_trialdata.npy'
 	if val_data_path is not None and os.path.isfile(val_data_path):
-		val_dataset = NetCascDataset(args.val_data_dir,args.cascade_type)
+		val_dataset = NetCascDataset(args.val_data_dir,args.cascade_type,gnn=args.gnn_model is None)
 	else: 
 		val_dataset = None
 	test_env = [NetworkCascEnv(num_nodes,p,p,'File',cascade_type=args.cascade_type,
 				filename = args.ego_data_dir + 'net_0.edgelist')]
-	V = Validator(test_env,Embedding,subact_sets=dataset.subact_sets,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir,device=device)
+	V = Validator(test_env,subact_sets=dataset.subact_sets,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir,device=device)
 	#criterion = nn.SmoothL1Loss()
-	criterion = nn.BCEWithLogitsLoss()
+	criterion = nn.BCELoss()
 
 	optimizer = optim.Adam(q_model.parameters(), lr=args.learning_rate)  # Replace with your own optimizer and learning rate
 	scheduler = lr_scheduler.StepLR(optimizer, step_size=args.sched_step, gamma=args.sched_gamma)
@@ -131,41 +136,46 @@ if __name__ == '__main__':
 		target = torch.tensor([0,2,4,5])
 		for i, data in enumerate(data_loader):
 			if args.gnn_model is not None:
-				(net_features,edge_index,actions),reward = data
+				(node_features,edge_index,z),(reward,multi_hot_failures) = data
 				net_features.to(device)
 				edge_index.to(device)
+				z.to(device)
 				#feat_topo = embed_model(net_features,edge_index)
 			else:
 				(feat_topo,actions), (reward,multi_hot_failures) = data
 			B = reward.shape[0]
 
-			atk_acts = actions[:,:2]
-			atk_idx = atk_acts#torch.zeros_like(atk_acts)
-			def_acts = actions[:,2:]
-			def_idx = def_acts#torch.zeros_like(def_acts)
+
 			# for i in range(B):
 			# 	atk_idx[i] = torch.tensor([torch.eq(subact_set[i],a).nonzero()[0][0] for a in atk_acts[i]])
 			# 	def_idx[i] = torch.tensor([torch.eq(subact_set[i],d).nonzero()[0][0] for d in def_acts[i]])
 			reward = reward.to(device)
 			multi_hot_failures = multi_hot_failures.to(device)
+			if args.gnn_model is None:
+				atk_acts = actions[:,:2]
+				atk_idx = atk_acts
+				def_acts = actions[:,2:]
+				def_idx = def_acts
+				#select rows from featurized topology corresponding to nodes attacked
+				feat_atk = Embedding.embed_action(atk_acts)
+				feat_atk = feat_atk.to(device)
+				#feat_atk = feat_topo[torch.arange(feat_topo.size(0))[:, None], atk_idx, :]
+				#flatten into 1 dimension (not including batch dim)
+				#feat_atk = feat_atk.view(B,-1)
 
-			#select rows from featurized topology corresponding to nodes attacked
-			feat_atk = Embedding.embed_action(atk_acts)
-			feat_atk = feat_atk.to(device)
-			#feat_atk = feat_topo[torch.arange(feat_topo.size(0))[:, None], atk_idx, :]
-			#flatten into 1 dimension (not including batch dim)
-			#feat_atk = feat_atk.view(B,-1)
-
-			feat_def = Embedding.embed_action(def_acts)
-			feat_def = feat_def.to(device)
-			#feat_def = feat_topo[torch.arange(feat_topo.size(0))[:, None], def_idx, :]
-			#feat_def = feat_def.view(B,-1)
-			#print(atk_idx)
+				feat_def = Embedding.embed_action(def_acts)
+				feat_def = feat_def.to(device)
+				#feat_def = feat_topo[torch.arange(feat_topo.size(0))[:, None], def_idx, :]
+				#feat_def = feat_def.view(B,-1)
+				#print(atk_idx)
 			# Zero the gradients
 			optimizer.zero_grad()
 
 			# Forward pass
-			pred = q_model(feat_topo,feat_atk,feat_def).squeeze()
+			if args.gnn_model is not None:
+				pred = q_model(z,node_features,edge_index)
+			else:
+				pred = q_model(feat_topo,feat_atk,feat_def).squeeze()
 			# if problem_idx != -1:
 			# 	print('training at problem index: ', [pred_reward[problem_idx].item(),reward[problem_idx].item()])
 			# Calculate loss
@@ -188,7 +198,7 @@ if __name__ == '__main__':
 		#Perform Validation
 		if epoch % args.val_freq == args.val_freq-1 or epoch == args.num_epochs-1:
 			q_model.eval()
-			val_err,test_err,util_err,nash_eq_div = V.validate(q_model,feat_topo[0],device=device)
+			val_err,test_err,util_err,nash_eq_div = V.validate(q_model,gnn=args.gnn_model is None,device=device)
 			writer.add_scalar("Validation/nash_eq_div",nash_eq_div,epoch)
 			writer.add_scalar("Validation/util_err",util_err,epoch)
 			writer.add_scalar("Validation/validation_err",val_err,epoch)
