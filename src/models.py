@@ -70,7 +70,7 @@ class GCN_Critic(torch.nn.Module):
         num_mlp_layers = max([num_mlp_layers,2])
         for i in range(num_mlp_layers-2):
             self.mlp_layers.append(Linear(hidden_size,hidden_size))
-        self.output_layer = Linear(hidden_size,output_size)
+        self.output_layer = Linear(hidden_size,1)
         self.sigmoid = nn.Sigmoid()
 
     def reset_parameters(self):
@@ -96,8 +96,8 @@ class GCN_Critic(torch.nn.Module):
             x = F.relu(conv(x,edge_index_batches))
             x = F.dropout(x,p=self.dropout,training=self.training)
         x = self.convs[-1](x,edge_index_batches)
+        x = x.reshape((batch_size,num_nodes,-1))
         print(x.shape)
-        exit()
         # if True:  # center pooling
         #     _, center_indices = np.unique(batch.cpu().numpy(), return_index=True)
         #     x_src = x[center_indices]
@@ -115,5 +115,10 @@ class GCN_Critic(torch.nn.Module):
         #MLP for Encoded vector
         for layer in self.mlp_layers:
             x = F.relu(layer(x))
-        outputs = self.sigmoid(self.output_layer(x))
+        print(x.shape)
+        outputs = self.output_layer(x)
+        print(x.shape)
+        x = self.sigmoid(x.squeeze(-1))
+        print(x.shape)
+        exit()
         return outputs

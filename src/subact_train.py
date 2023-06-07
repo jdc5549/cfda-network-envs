@@ -8,7 +8,6 @@ import sys
 import re
 
 from torch.utils.data import DataLoader as torch_DataLoader
-from torchvision.transforms import ToTensor
 from torch.utils.tensorboard import SummaryWriter
 
 from SL_validate import Validator
