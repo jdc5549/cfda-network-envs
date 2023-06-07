@@ -97,7 +97,6 @@ class GCN_Critic(torch.nn.Module):
             x = F.dropout(x,p=self.dropout,training=self.training)
         x = self.convs[-1](x,edge_index_batches)
         x = x.reshape((batch_size,num_nodes,-1))
-        print(x.shape)
         # if True:  # center pooling
         #     _, center_indices = np.unique(batch.cpu().numpy(), return_index=True)
         #     x_src = x[center_indices]
@@ -115,10 +114,6 @@ class GCN_Critic(torch.nn.Module):
         #MLP for Encoded vector
         for layer in self.mlp_layers:
             x = F.relu(layer(x))
-        print(x.shape)
-        outputs = self.output_layer(x)
-        print(x.shape)
-        x = self.sigmoid(x.squeeze(-1))
-        print(x.shape)
-        exit()
-        return outputs
+        x = self.output_layer(x)
+        output = self.sigmoid(x.squeeze(-1))
+        return output
