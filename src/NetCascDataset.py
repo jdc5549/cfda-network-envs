@@ -5,9 +5,9 @@ import os
 import networkx as nx
 import random
 import pickle
-
+from utils import get_combinatorial_actions
 class NetCascDataset_Subact(Dataset):
-    def __init__(self,ego_data_dir,subact_data_dir,casc_type,gnn=False):
+    def __init__(self,ego_data_dir,subact_data_dir,casc_type,gnn=False,topo_features=False,val=False):
         self.gnn = gnn
         filename = 'net_0.edgelist'
         topo_path = os.path.join(ego_data_dir, filename)
@@ -18,30 +18,45 @@ class NetCascDataset_Subact(Dataset):
             self.thresholds = np.load(thresh_path)
         else:
             self.thresholds = []
-        casc_data = np.load(subact_data_dir + f"subact_{casc_type}casc_trialdata.npy")
+        if val:
+            casc_data = np.load(subact_data_dir + f"subact_{casc_type}casc_valdata.npy")
+        else:
+            casc_data = np.load(subact_data_dir + f"subact_{casc_type}casc_trialdata.npy")
         casc_data = np.reshape(casc_data,(-1,5))
 
         unique_list = []
         kept_idxs = []
-        for i,c1 in enumerate(casc_data):
-            unique = True
-            for c2 in unique_list:
-                if np.array_equal(c1,c2):
-                    unique = False
-                    break
-            if unique:
-                unique_list.append(c1)
+        self.casc_keys = set()
+        all_actions = get_combinatorial_actions(self.thresholds.shape[0],2)
+        for i,c in enumerate(casc_data):
+            c_tup = tuple(c.astype(int))
+            key = len(all_actions)*all_actions.index(c_tup[:2]) + all_actions.index(c_tup[2:4])
+            if key not in self.casc_keys:
+                self.casc_keys.add(key)
                 kept_idxs.append(i)
-        casc_data = np.asarray(unique_list)
+                unique_list.append(c)
+        casc_data = np.stack(unique_list)
+        # if val:
+        #     print(f'Val Data: {casc_data}')
+        # else:
+        #     print(f'Train Data: {casc_data}')
 
         self.action_data = casc_data[:,:-1].astype(int)
         self.reward_data = casc_data[:,-1]
 
-        self.z_action_data = torch.zeros((self.action_data.shape[0],self.thresholds.shape[0]),dtype=torch.int32)
+        self.z_action_data = torch.zeros((self.action_data.shape[0],2,self.thresholds.shape[0]),dtype=torch.int32)
         for i,a in enumerate(self.action_data):
-            self.z_action_data[i][a[:2]] += 1
-            self.z_action_data[i][a[2:]] += 2
+            self.z_action_data[i][0][a[:2]] = 1
+            self.z_action_data[i][1][a[2:]] = 1
 
+        self.comb_action_idxs = torch.zeros((self.action_data.shape[0],2),dtype=torch.long)
+        for i,a in enumerate(self.action_data):
+            atk_act = tuple(a[:2])
+            comb_idx = all_actions.index(atk_act)
+            self.comb_action_idxs[i,0] = comb_idx
+            def_act = tuple(a[2:])
+            comb_idx = all_actions.index(def_act)
+            self.comb_action_idxs[i,1] = comb_idx
 
         info_fn = subact_data_dir + f"subact_{casc_type}casc_trialinfo.pkl"
         with open(info_fn,'rb') as f:
@@ -67,26 +82,21 @@ class NetCascDataset_Subact(Dataset):
             min_t = np.min(self.thresholds)
             norm_thresh = [2*(t-min_t)/(max_t-min_t)-1 if (max_t-min_t) != 0 else 0 for i,t in enumerate(self.thresholds)]
             norm_thresh = torch.tensor(np.stack(norm_thresh)).unsqueeze(0)
+        if len(self.thresholds) > 0:
+            self.net_features = norm_thresh#norm_thresh.reshape([-1,1])
+        else:
+            self.net_features = None
         if self.gnn:
-            if len(self.thresholds) > 0:
-                self.net_features = norm_thresh#norm_thresh.reshape([-1,1])
-            else:
-                self.net_features = torch.ones([len(self.topology),1])
             from torch_geometric.utils import from_networkx
             self.edges = from_networkx(self.topology).edge_index
-        else:
+        if topo_features:
             from graph_embedding import heuristic_feature_embedding
-            num_nodes = self.topology.number_of_nodes()
-            #n0 = sorted(net.nodes())[0] #recognize 0 vs 1 indexing of node names
-            # nodes = [i for i in range(num_nodes)]
-            # max_node = max(nodes)
-            # min_node = min(nodes)
-            #nodes = [2*(node-min_node)/(max_node-min_node)-1 if (max_node-min_node) != 0 else 0 for node in nodes]
-            #toc = time.perf_counter()
-            #print('Node Names: ', toc - tic)
-            #feat_t = torch.tensor(nodes)
             embed = heuristic_feature_embedding(self.topology) #TODO will need to account for CNs here
-            self.feat_topo = torch.cat((norm_thresh,embed),dim=0).flatten()#permute(self.feat_topo_data,(0,2,1))    
+            if self.net_features is not None:
+                self.net_features = torch.cat((self.net_features,embed),dim=0)#permute(self.feat_topo_data,(0,2,1))  
+            else:
+                self.net_features = embed
+        self.net_features = self.net_features.flatten()
             #self.feat_topo = feat_t
             #self.feat_topo_data = torch.permute(self.feat_topo_data,(0,2,1))          
     def __len__(self):
@@ -107,13 +117,13 @@ class NetCascDataset_Subact(Dataset):
         # trial_idx = index % self.reward_data.shape[1]
         #if GNN return net_features and edges to pass through the GNN, else return the heuristic embedding
         if self.gnn: 
-            return ((self.net_features,self.edges,self.z_action_data[index]),(self.reward_data[index],self.failset_onehot_data[index]))
+            return ((self.net_features,self.edges,self.comb_action_idxs[index]),(self.reward_data[index],self.failset_onehot_data[index]))
         else:
-            return ((self.feat_topo,self.action_data[index]),(self.reward_data[index],self.failset_onehot_data[index]))
+            return ((self.net_features,self.comb_action_idxs[index]),(self.reward_data[index],self.failset_onehot_data[index]))
 
 
 class NetCascDataset(Dataset):
-    def __init__(self,data_dir,casc_type,gnn=False):
+    def __init__(self,data_dir,casc_type,gnn=False,val=True):
         self.gnn = gnn
         topo_dir = data_dir + 'topologies/'
         topologies = []
@@ -127,8 +137,10 @@ class NetCascDataset(Dataset):
                 if os.path.isfile(thresh_path):
                     thresholds.append(np.load(thresh_path))
                 topologies.append(G)
-
-        casc_data = np.load(data_dir + f"{casc_type}casc_trialdata.npy")
+        if val:
+            casc_data = np.load(data_dir + f"{casc_type}casc_valdata.npy")
+        else:
+            casc_data = np.load(data_dir + f"{casc_type}casc_trialdata.npy")
         self.action_data = casc_data[:,:,:-1].astype(int)
         self.z_action_data = torch.zeros((self.action_data.shape[0],self.action_data.shape[1],self.thresholds.shape[0]),dtype=torch.int32)
         for i,topo in self.action_data:
@@ -219,11 +231,11 @@ if __name__ == '__main__':
     #             print(f'Loader Reward {reward}, Data Reward {data_rew}')
     #     except:
     #         pass
-    ego_data_dir = 'data/Ego/7C2/ego_NashEQ/'
+    ego_data_dir = 'data/Ego/25C2/ego_NashEQ/'
     util = np.load(ego_data_dir + 'thresholdcasc_NashEQs/util.npy')
     #print(np.around(util,decimals=3))
-    subact_data_dir = ego_data_dir + '5sets_5targets_100trials_RandomCycleExpl/'
-    dataset=NetCascDataset_Subact(ego_data_dir,subact_data_dir,'threshold')
+    subact_data_dir = ego_data_dir + '80sets_5targets_100trials_RandomCycleExpl/'
+    dataset=NetCascDataset_Subact(ego_data_dir,subact_data_dir,'threshold',topo_features=True)
     rand_idx = random.randint(0,dataset.__len__())
     (_,action),(reward,multi_hot) = dataset.__getitem__(rand_idx)
     print(action)

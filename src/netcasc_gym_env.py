@@ -12,7 +12,7 @@ from graph_embedding import heuristic_feature_embedding
 from utils import create_random_nets, ncr
 
 class NetworkCascEnv(gym.Env):
-    def __init__(self,net_size,p_atk,p_def,embed_size,net_type,degree=1,cascade_type='threshold',filename=None,discrete_obs=False,topo_eps=None):
+    def __init__(self,net_size,p_atk,p_def,embed_size,net_type,degree=2,cascade_type='threshold',filename=None,discrete_obs=False,topo_eps=None):
         super(NetworkCascEnv,self).__init__()
         self.net_size = net_size
         self.discrete_obs = discrete_obs

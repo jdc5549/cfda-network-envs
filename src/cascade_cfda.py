@@ -35,6 +35,10 @@ class Counterfactual_Cascade_Fns():
 					#check independence through neighbors
 					thresh_copy = self.env.scm.thresholds.copy()
 					all_fail_nodes = list(set(f1_fail_set) | set(f2_fail_set)) #merge lists without repeating elements 
+					# print(f1_inits)
+					# print(f2_inits)
+					# print(all_fail_nodes)
+					# print('-----------------------------')
 					casc_thresh = False
 					for node in all_fail_nodes:
 						for n in self.env.scm.G[node]: 
@@ -256,79 +260,242 @@ class Counterfactual_Cascade_Fns():
 
 		return cfac_trial_data, cfac_trial_info
 
+	def gen_cross_subset_cfacs(self,trial_data,trial_info,fac_keys,all_comb_acts):
+		num_subsets = trial_data.shape[0]
+		fail_components = [[] for j in range(num_subsets)]
+		for i,sub_info in enumerate(trial_info):
+			for j,info in sub_info.items():
+				fail_set = info['fail_set']
+				init_fail = info['init_fail']
+				if self.casc_type == 'threshold':
+					sub = self.env.scm.G.subgraph(fail_set)
+					new_failure_component = {}
+					for c in nx.connected_components(sub):
+						c_init = [n for n in c if n in init_fail]
+						if len(c_init) > 1:
+							continue
+						new_failure_component[c_init[0]] = list(c)
+						# for i in c_init:
+						# 	fail_components[i] = list(c)
+				else:
+					new_failure_component = {-1: []}
+					for f in fail_set:
+						if f in init_fail: 
+							new_failure_component[f] = [f]
+						else:
+							new_failure_component[-1].append(f)
+				fail_components[i].append(new_failure_component)
+
+		cfac_trial_data = []
+		cfac_trial_info = []
+		failed_inits = set()
+		cfac_keys = set()
+		for i,fcs_subset_i in enumerate(fail_components):
+			for j,fcj in enumerate(fcs_subset_i):
+				act_j = trial_data[i][j][:-1]
+				for p,fcs_subset_p in enumerate(fail_components[i+1:]):
+					for k,fck in enumerate(fcs_subset_p):
+						act_k = trial_data[p][k][:-1]
+						num_inits = len(fcj.keys()) + len(fck.keys()) - 2   #sum([1 for n in cc1 if n in init_fail_new or n in self.init_fails[i]])
+						if num_inits > len(act_k):
+							continue
+						init1 = list(fcj.keys())
+						init2 = list(fck.keys())
+						key1 = len(all_comb_acts)*init1[0] if len(init1) > 0 else 0
+						key2 = init2[0] if len(init2) > 0 else 0
+						init_key = key1 + key2
+						if init_key in failed_inits:
+							continue
+						else:
+							indep_sets = self.check_failure_independence(fcj,fck)
+							if len(indep_sets) == 0:
+								failed_inits.add(init_key)
+						for idp in indep_sets:
+							cfac_atk_action = idp.copy()
+							all_def_actions = list(act_j[2:]) + list(act_k[2:])
+							all_def_actions = list(map(int,all_def_actions))
+							random.shuffle(all_def_actions)
+							cfac_def_action = []
+							second_gen = False
+							for d in all_def_actions:
+								if d not in cfac_def_action and d not in cfac_atk_action:
+									cfac_def_action.append(d)
+								if len(cfac_def_action) >= len(list(act_j[2:])):
+									break
+							if len(cfac_def_action) < len(list(act_j[2:])):
+								second_gen = True
+								d = np.random.choice([a for a in range(self.env.scm.G.number_of_nodes()) if a not in cfac_atk_action and a not in cfac_def_action])
+								cfac_def_action.append(d)
+							cfac_atk_action.sort()
+							cfac_def_action.sort()
+							cfac_action = [tuple(cfac_atk_action),tuple(cfac_def_action)]
+
+							#skip any cfac actions that already exist in the factual data
+							key = len(all_comb_acts)*all_comb_acts.index(cfac_action[0]) + all_comb_acts.index(cfac_action[1])
+							# except:
+							# 	print(all_def_actions)
+							# 	print(cfac_atk_action)
+							# 	print(cfac_def_action)
+							# 	print(second_gen)
+							# 	exit()
+							if key in fac_keys or key in cfac_keys: 
+								continue
+							else:
+								cfac_keys.add(key)
+
+							cfac_init_fail = cfac_atk_action #[n for n in cfac_atk_action if n not in cfac_def_action]
+							for f in idp:
+								if f in fcj.keys():
+									def_1 = f
+								if f in fck.keys():
+									def_2 = f
+							#TODO: Account for case where init fail from one component is a cascaded fail in the other
+							# def_1 = cc1 if any(n in cc1 for n in cfac_init_fail) else []
+							# def_2 = cc2 if any(n in cc2 for n in cfac_init_fail) else []
+							counterfac_casc_fail = fcj[def_1] + fck[def_2]
+							#fac_cfac_casc_fail = self.env.scm.check_cascading_failure(cfac_init_fail)
+							#self.env.scm.reset()
+							#Check that cfac is valid
+							# if set(fac_cfac_casc_fail) != set(counterfac_casc_fail):
+							# 	print('action1: ', act_j)
+							# 	print('action2: ', act_k)
+							# 	print('init1: ',trial_info[j]['init_fail'])
+							# 	print('init2: ', trial_info[k]['init_fail'])
+							# 	print(f'orig_failset1: ', trial_info[j]['fail_set'])
+							# 	print('orig_failset2: ', trial_info[k]['fail_set'])
+							# 	print('cfac_init: ', cfac_init_fail)
+							# 	print('comp1: ', fcj)
+							# 	print('comp2: ', fck)
+							# 	if self.cfa_cascade_fns.casc_type == 'shortPath':
+							# 		print('Factual Fail Set 1: ', self.env.scm.check_cascading_failure(trial_info[j]['init_fail']))
+							# 		self.env.scm.reset()
+							# 		print('Factual Fail Set 2: ', self.env.scm.check_cascading_failure(trial_info[k]['init_fail']))
+							# 		self.env.scm.reset()
+							# 	print('cfac_actions: ',cfac_action)
+							# 	print('cfac_init_fail: ', cfac_init_fail)
+							# 	print('def_1: ', def_1)
+							# 	print('def_2: ', def_2)
+							# 	print('counterfac_casc_fail: ', counterfac_casc_fail)
+							# 	print('fac_cfac_casc_fail: ',fac_cfac_casc_fail)
+							# 	exit()
+							if cfac_init_fail == trial_info[i][j]['init_fail'] or cfac_init_fail == trial_info[p][k]['init_fail']:
+									continue
+							r = len(counterfac_casc_fail)/self.env.scm.G.number_of_nodes()
+							if r == 0 and len(counterfac_casc_fail) > 0:
+								print('Reward: ',r)
+								print('Num node: ',self.env.scm.G.number_of_nodes())
+								print('Old init: ', init_fails[i])
+								print('New init: ',init_fail_new)
+								print('CC1: ', cc1)
+								print('CC2: ',cc2)
+								print("Cfac Casc: ", counterfac_casc_fail)
+								print('Cfac Init:',fcac_init_fail)
+								exit()	
+							trial_list = [a for act in cfac_action for a in act]
+							trial_list.append(r)
+							trial_result = np.asarray(trial_list)
+							cfac_trial_data.append(trial_result)
+							info = {'init_fail':cfac_init_fail,'fail_set':counterfac_casc_fail}
+							cfac_trial_info.append(info)
+
+		cfac_trial_data = np.stack(cfac_trial_data) if len(cfac_trial_data) > 0 else []
+		return cfac_trial_data, cfac_trial_info
+
 if __name__ == '__main__':
 	import argparse
-	from create_SL_data_set import create_dataset
-	net_size = 25
-	exploration_types = ['CDME','Random','RandomCycle']
-	trial_counts = [10,100,1000]
-	load_dir = 'data/25C2/validation_data/10topo_0trials_RandomExpl/'
+	from create_subact_dataset import create_dataset
+	savedata_fn = './data/Cfac_tests/50sets_net_size'
+	net_size = 100
+	num_subtargets = 5
+	subact_sets = 20
+	train_trials = 100
+	#cascade_type = 'threshold'
+	cascade_types = ['threshold']#,'shortPath']#,'coupled']
 
-	cfac_data = {}
-	for expl in exploration_types:
-		cfac_data[expl] = []
-		print(f'Exploration type {expl}')
-		for count in trial_counts:
-			print(f'{count} Trials')
+	plot_params = [25,50,100,200,400,800,1600] #num_subsets
+	cfac_data = {'threshold':np.zeros((len(plot_params),4))}#,'shortPath':np.zeros((len(plot_params),4))}#,'coupled':np.zeros((len(plot_params),4))}
+	for i,param in enumerate(plot_params):
+		for casc_type in cascade_types:
+			print(f'Net size {param}: {casc_type} cascading.')
 			args = argparse.Namespace(
-				train=True,
-				cfda=True,
-				calc_nash=False,
-				net_size=net_size,
+				ego_graph_size=param,
 				num_nodes_chosen=2,
-				num_topologies=10,
-				num_trials=count,
-				cascade_type='threshold',
-				load_dir=load_dir,
-				exploration_type=expl,
-				epsilon=0.99,
+				num_subact_targets=num_subtargets,
+				num_subact_sets=subact_sets,
+				cfda=True,
+				calc_nash_ego=False,
+				max_valset_trials=0,
+				num_trials_sub=train_trials,
+				cascade_type=casc_type,
+				exploration_type='RandomCycle',
+				load_dir=None,
+				top_dir='./data/Cfac_tests',
 				overwrite=True
 			)
-			cfac_counts = create_dataset(args)
-			cfac_data[expl].append(cfac_counts)
+			data = create_dataset(args)
+			cfac_data[casc_type][i,:2] = data[:2]
+			cfac_data[casc_type][i,2] = data[2]/data[0] if data[0] > 0 else 0
+			cfac_data[casc_type][i,3] = data[3]/data[1] if data[1] > 0 else 0
+			print(cfac_data[casc_type][i])
 
 	import pickle
-	with open(load_dir + f'Cfac_test_data.pkl','wb') as file:
-		pickle.dump(cfac_data,file)  
+	with open(f'{savedata_fn}.pkl','wb') as file:
+		pickle.dump(cfac_data,file)
+
+	# np.save(savedata_fn,cfac_data)
+	# for data in cfac_data:
+	# 	print(data)
 
 	import matplotlib.pyplot as plt
-
-	means_Random = [np.mean(data) for data in cfac_data['Random']]
-	stds_Random = [np.std(data) for data in cfac_data['Random']]
-	confidence_intervals_Random = [(mean - 1.96 * (std / np.sqrt(len(data))),
-	                         mean + 1.96 * (std / np.sqrt(len(data))))
-	                        for mean, std, data in zip(means_Random, stds_Random, cfac_data['Random'])]
-
-	# Plot the mean with shaded confidence interval
-	plt.errorbar(trial_counts, means_Random, yerr=np.transpose(confidence_intervals_Random), fmt='o', capsize=5)
-
-	means_RandomCycle = [np.mean(data) for data in cfac_data['RandomCycle']]
-	stds_RandomCycle = [np.std(data) for data in cfac_data['RandomCycle']]
-	confidence_intervals_RandomCycle = [(mean - 1.96 * (std / np.sqrt(len(data))),
-	                         mean + 1.96 * (std / np.sqrt(len(data))))
-	                        for mean, std, data in zip(means_RandomCycle, stds_RandomCycle, cfac_data['RandomCycle'])]
-
-	# Plot the mean with shaded confidence interval
-	plt.errorbar(trial_counts, means_Random, yerr=np.transpose(confidence_intervals_Random), fmt='o', capsize=5)
-
-	means_CDME = [np.mean(data) for data in cfac_data['CDME']]
-	stds_CDME = [np.std(data) for data in cfac_data['CDME']]
-	confidence_intervals_CDME = [(mean - 1.96 * (std / np.sqrt(len(data))),
-	                         mean + 1.96 * (std / np.sqrt(len(data))))
-	                        for mean, std, data in zip(means_CDME, stds_CDME, cfac_data['CDME'])]
-
-	# Plot the mean with shaded confidence interval
-	plt.errorbar(trial_counts, means_CDME, yerr=np.transpose(confidence_intervals_CDME), fmt='o', capsize=5)
-
-	plt.legend(['Random','RandomCycle','CDME'])
+	plt.plot(plot_params,cfac_data['threshold'][:,1])
+	#plt.plot(plot_params,cfac_data['shortPath'][:,1])
+	#plt.plot(plot_params,casc_data['coupled'][1,:])
 
 	# Set labels and title
-	plt.xlabel('Trial Counts')
-	plt.ylabel('Mean')
-	plt.title('Mean with 95% Confidence Interval')
-
+	plt.xlabel('Number of Nodes in Network')
+	plt.ylabel('Number of Counterfactual Data')
+	plt.title('Counterfactual Data and Network Size')
+	plt.legend(['Threshold'])#,'Shortest Path'])
 	# Show the plot
 	plt.show()
+
+
+	# means_Random = [np.mean(data) for data in cfac_data['Random']]
+	# stds_Random = [np.std(data) for data in cfac_data['Random']]
+	# confidence_intervals_Random = [(mean - 1.96 * (std / np.sqrt(len(data))),
+	#                          mean + 1.96 * (std / np.sqrt(len(data))))
+	#                         for mean, std, data in zip(means_Random, stds_Random, cfac_data['Random'])]
+
+	# # Plot the mean with shaded confidence interval
+	# plt.errorbar(trial_counts, means_Random, yerr=np.transpose(confidence_intervals_Random), fmt='o', capsize=5)
+
+	# means_RandomCycle = [np.mean(data) for data in cfac_data['RandomCycle']]
+	# stds_RandomCycle = [np.std(data) for data in cfac_data['RandomCycle']]
+	# confidence_intervals_RandomCycle = [(mean - 1.96 * (std / np.sqrt(len(data))),
+	#                          mean + 1.96 * (std / np.sqrt(len(data))))
+	#                         for mean, std, data in zip(means_RandomCycle, stds_RandomCycle, cfac_data['RandomCycle'])]
+
+	# # Plot the mean with shaded confidence interval
+	# plt.errorbar(trial_counts, means_Random, yerr=np.transpose(confidence_intervals_Random), fmt='o', capsize=5)
+
+	# means_CDME = [np.mean(data) for data in cfac_data['CDME']]
+	# stds_CDME = [np.std(data) for data in cfac_data['CDME']]
+	# confidence_intervals_CDME = [(mean - 1.96 * (std / np.sqrt(len(data))),
+	#                          mean + 1.96 * (std / np.sqrt(len(data))))
+	#                         for mean, std, data in zip(means_CDME, stds_CDME, cfac_data['CDME'])]
+
+	# # Plot the mean with shaded confidence interval
+	# plt.errorbar(trial_counts, means_CDME, yerr=np.transpose(confidence_intervals_CDME), fmt='o', capsize=5)
+
+	# plt.legend(['Random','RandomCycle','CDME'])
+
+	# # Set labels and title
+	# plt.xlabel('Trial Counts')
+	# plt.ylabel('Mean')
+	# plt.title('Mean with 95% Confidence Interval')
+
+	# # Show the plot
+	# plt.show()
 
 
 

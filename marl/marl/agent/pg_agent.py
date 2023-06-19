@@ -168,7 +168,92 @@ class FeaturizedACAgent(PGAgent):
         gae = (gae-gae.mean())/(gae.std()+1e-8)
         actor_loss = -(log_prob * gae).mean()
         actor_loss.backward()
-        self.actor_optimizer.step()    
+        self.actor_optimizer.step()
+
+class Exploiter_ACAgent(PGAgent):
+    """
+    Deep Actor-Critic Agent class. The critic is train following DQN algorithm and the policy is represented by a neural network with a softmax output.
+    
+    :param critic_model: (nn.Module) The critic's model 
+    :param actor_model: (Model or nn.Module) The model for the actor
+    :param observation_space: (gym.Spaces) The observation space
+    :param action_space: (gym.Spaces) The action space
+    :param experience: (Experience) The experience memory data structure
+    :param exploration: (Exploration) The exploration process 
+    :param lr_actor: (float) The learning rate for the actor
+    :param lr_critic: (float) The learning rate for the critic
+    :param gamma: (float) The training parameters
+    :param batch_size: (int) The size of a batch
+    :param target_update_freq: (int) The update frequency of the target model  
+    :param name: (str) The name of the agent      
+    """
+    def __init__(self, critic_model, actor_model, observation_space, action_space, experience="ReplayMemory-1000", exploration="EpsGreedy", lr_actor=0.001, lr_critic=0.001, gamma=0.95, batch_size=32, target_update_freq=None, name="DeepACAgent",train=True,act_degree=1,model=None):
+        self.degree = act_degree
+        self.all_actions = get_combinatorial_actions(gymSpace2dim(observation_space)[0],self.degree)
+        actor_policy = StochasticPolicy(actor_model,observation_space=observation_space,action_space=action_space,all_actions=self.all_actions)
+        PGAgent.__init__(self, critic=None, actor_policy=actor_policy, actor_model=actor_model, observation_space=observation_space, action_space=action_space, experience=experience, exploration=exploration, lr_actor=lr_actor, gamma=gamma, batch_size=batch_size, name=name)
+        self.train = train
+        if critic_model is not None:
+            self.critic = DQNCriticAgent(qmodel=critic_model, observation_space=observation_space, action_space=action_space, experience=self.experience, gamma=self.gamma, lr=lr_critic, batch_size=self.batch_size, target_update_freq=self.target_update_freq,act_degree=act_degree)
+        else:
+            self.critic = QTableAgent(observation_space=observation_space, action_space=action_space,experience=self.experience, gamma=self.gamma, lr=lr_critic, batch_size=self.batch_size, target_update_freq=self.target_update_freq,act_degree=act_degree)
+        self.actor_optimizer = optim.Adam(self.policy.model.parameters(), lr=self.lr)
+        if model is not None:
+            self.policy.load(model)
+    def update_target_policy(self):
+        self.target_policy.model.load_state_dict(self.policy.model.state_dict())
+
+    def update_actor(self, batch):
+        t_observation = torch.from_numpy(np.asarray(batch.observation)).float()
+        action = batch.action
+        #print(action)
+        feat_actions = []
+        if type(action[0]) == list:
+            num_acts = int(len(action[0])/self.degree)
+        else:
+            num_acts = 1 
+        for i,a in enumerate(action):
+            act = t_observation[i,a]
+            if type(action[0]) == list:
+                if num_acts > 1:
+                    if self.degree == 1:
+                        for j in range(len(a)):
+                            feat_actions.append(act[j])
+                    else:
+                        print("ERROR: Haven't implemented Degree > 1 with RCR yet")
+                        exit()
+                else:
+                    feat_actions.append(act.flatten())
+            else:
+                feat_actions.append(act)
+        t_feat_action = torch.stack(feat_actions)
+        observation = np.mean(batch.observation,axis=1)
+        t_observation = torch.tensor(observation).float()
+        t_action = torch.from_numpy(np.asarray(batch.action)).float()
+        if self.degree == 1:
+            t_action = torch.from_numpy(np.asarray(batch.action)).float()
+        else:
+            comb_action = [self.all_actions.index(a) for a in action]
+            t_action = torch.from_numpy(np.asarray(comb_action)).float()
+        # Calcul actor loss
+        self.actor_optimizer.zero_grad()
+        if num_acts == 1: 
+            pd = self.policy.forward(t_observation)     
+            log_prob = pd.log_prob(t_action)
+        else:
+            pd = self.policy.forward(t_observation)
+            log_prob = []
+            for i in range(t_action.shape[0]):
+                pd = self.policy.forward(t_observation[i])
+                l = pd.log_prob(t_action[i,:])
+                log_prob.append(l)
+            log_prob = torch.cat(log_prob)
+        t_observation = t_observation.repeat([num_acts,1])
+        gae = self.critic.policy.Q(t_observation,t_feat_action).squeeze()
+        gae = (gae-gae.mean())/(gae.std()+1e-8)
+        actor_loss = -(log_prob * gae).mean()
+        actor_loss.backward()
+        self.actor_optimizer.step()   
 
 class PHCAgent(PGAgent):
     """

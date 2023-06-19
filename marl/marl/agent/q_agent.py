@@ -1,7 +1,7 @@
 import marl
 from . import TrainableAgent, MATrainable
-from ..policy import QPolicy,QCriticPolicy,MinimaxQCriticPolicy,MinimaxQTablePolicy
-from ..model import MultiQTable
+from ..policy import QPolicy,QCriticPolicy,MinimaxQCriticPolicy,MinimaxQTablePolicy,MABCriticPolicy
+from ..model import MultiQTable,MABTable
 from marl.tools import gymSpace2dim,get_combinatorial_actions
 from ..experience import ReplayMemory
 
@@ -13,6 +13,39 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import time
+
+
+class MABAgent():
+    """
+    The class of trainable agent using  Q-table to model the  function Q 
+    
+    :param observation_space: (gym.Spaces) The observation space
+    :param action_space: (gym.Spaces) The action space
+    :param exploration: (Exploration) The exploration process 
+    :param gamma: (float) The training parameters
+    :param lr: (float) The learning rate
+    :param target_update_freq: (int) The update frequency of the target model  
+    :param name: (str) The name of the agent      
+    """
+    
+    def __init__(self, action_space, exploration="EpsGreedy", lr=0.01,sched_step=100,gamma=0.1, name="MABAgent"):
+        model = MABTable(gymSpace2dim(action_space))
+        self.policy = MABCriticPolicy(model,gymSpace2dim(action_space))
+        self.exploration = exploration
+        self.lr = lr
+        self.gamma = gamma
+        self.sched_step = sched_step
+        self.step = 0
+
+    def update_q(self,batch_rew, batch_action):
+        curr_value = self.policy.Q.q_table[batch_action]
+        self.policy.Q.q_table[batch_action] = curr_value + self.lr * (batch_rew - curr_value)
+        self.step += 1
+        if self.step%self.sched_step == 0:
+            self.lr = self.lr * self.gamma
+        
+    def value(self,action):
+        return self.policy.Q(action)
 
 class QAgent(TrainableAgent):
     """
@@ -171,7 +204,6 @@ class MinimaxQAgent(QAgent, MATrainable):
         self.target_policy = copy.deepcopy(self.policy)
         
     def target(self, Q, joint_batch):
-        rew = torch.tensor(joint_batch.reward).float()
         target_value = torch.tensor([joint_batch.reward[i][self.index] for i in range(len(joint_batch.reward))])
         return target_value.unsqueeze(1).detach()
         

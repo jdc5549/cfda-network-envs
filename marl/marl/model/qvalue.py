@@ -55,6 +55,31 @@ class QTable(Model):
     def shape(self):
         return tuple([self.n_obs] + [self.n_actions])
 
+class MABTable(Model):
+    """
+    The class of action value function for discret state and action space.
+    
+    :param obs_sp: (int) The number of possible observations
+    :param act_sp: (int) The number of possible actions
+    """
+    def __init__(self, act_sp):
+        self.n_actions = act_sp
+        self.value = torch.zeros(self.n_actions, dtype=torch.float64)
+    
+    @property
+    def q_table(self):
+        return self.value
+    
+    def __call__(self,action=None):
+        if action is None:
+            return self.value     
+        else:
+            return self.value[action]
+        
+    @property
+    def shape(self):
+        return self.value.shape
+
 class MultiQTable(Model):
     """
     The class of actions value function for multi-agent with discret state and action space.

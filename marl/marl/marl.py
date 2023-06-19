@@ -213,23 +213,13 @@ class MARL_with_exploiters(MARL):
     :param name: (str) The name of the system
     """
 
-    #TODO: make more general to other use cases
-    def __init__(self, ego_agents_list=[],exploiter_agents_list=[], name='marl_exploiters',log_dir="logs",obs=[],nash_policies=None,explt_opp_update_freq=1000,act_degree=1,exploited='NN'):
+    def __init__(self, ego_policies=[],exploiter_agents_list=[], name='marl_exploiters',log_dir="logs",obs=[],nash_policies=None,explt_opp_update_freq=1000,act_degree=1,exploited='NN'):
         MAS.__init__(self, agents_list=exploiter_agents_list, name=name)
         self.explt_opp_update_freq = explt_opp_update_freq
-        self.ego_agents_list = ego_agents_list
+        self.ego_policies = ego_agents_list
         self.exploiter_agents_list = exploiter_agents_list
         self.obs = obs
         self.exploited = exploited
-
-
-        if exploited == 'NN':
-            self.ego_policies = []
-            print('Loading Ego Agent Policies...')
-            for ob in self.obs:
-                self.ego_policies.append(self.get_agent_policies(ob)[:2])
-            print('Done.')
-
         #self.last_ego_models = [copy.deepcopy(ag.policy) for ag in self.ego_agents_list]        
         self.nash_policies = nash_policies
         self.last_policies = None
