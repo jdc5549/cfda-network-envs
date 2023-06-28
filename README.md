@@ -5,8 +5,7 @@ This repository contains network environments that model the security scenario o
 ## Data Generation
 The following command is used to create a training dataset for the neural network model.
 
-```python src/create_subact_dataset.py --ego_graph_size <size of main graph> --num_subact_targets <how many targets available in a subspace> --num_subact_sets <how many subspaces to create> --num_trials_sub <how many trials to perform in each subspace> --cfda <Whether to create counterfactual data> 
---calc_nash_ego <whether to calculate NashEQ (only for networks <50 nodes)> --max_valset_trials <size of validation dataset> --cascade_type <cascading failure model to use> --load_dir <to reuse a network topology specify path to file>```
+```python src/create_subact_dataset.py --ego_graph_size <size of main graph> --num_subact_targets <how many targets available in a subspace> --num_subact_sets <how many subspaces to create> --num_trials_sub <how many trials to perform in each subspace> --cfda <Whether to create counterfactual data> --calc_nash_ego <whether to calculate NashEQ (only for networks <50 nodes)> --max_valset_trials <size of validation dataset> --cascade_type <cascading failure model to use> --load_dir <to reuse a network topology specify path to file>```
 
 As an example, the following command will create a 100-node graph with 500 subaction spaces that are restricted to 5 nodes to target each. 100 trials of the security game will be played out per subaction space and threshold-based cascading will be used to calculate cascading failure results.
 
