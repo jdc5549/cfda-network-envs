@@ -28,14 +28,15 @@ class MABAgent():
     :param name: (str) The name of the agent      
     """
     
-    def __init__(self, action_space, exploration="EpsGreedy", lr=0.01,sched_step=100,gamma=0.1, name="MABAgent"):
-        model = MABTable(gymSpace2dim(action_space))
+    def __init__(self, action_space, exploration="EpsGreedy", lr=0.01,sched_step=100,gamma=0.1, name="MABAgent",device='cpu'):
+        model = MABTable(gymSpace2dim(action_space),device=device)
         self.policy = MABCriticPolicy(model,gymSpace2dim(action_space))
         self.exploration = exploration
         self.lr = lr
         self.gamma = gamma
         self.sched_step = sched_step
         self.step = 0
+        self.device = device
 
     def update_q(self,batch_rew, batch_action):
         curr_value = self.policy.Q.q_table[batch_action]

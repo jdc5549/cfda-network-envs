@@ -414,12 +414,12 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
     :param observation_space: (gym.Spaces) The observation space
     :param action_space: (gym.Spaces) The action space
     """
-    def __init__(self, model, action_space = None,player=0,all_actions=[],eval_mode=False):
+    def __init__(self, model, action_space = None,player=0,all_actions=[],eval_mode=False,device='cpu'):
         self.action_space = action_space
         self.model = model
         self.player = player
         self.all_actions = all_actions
-        self.action_indices = torch.tensor([i for i in range(len(self.all_actions))]).to(torch.long)
+        self.action_indices = torch.tensor([i for i in range(len(self.all_actions))]).to(torch.long).to(device)
         self.eval_mode = eval_mode
         self.policy = None
 

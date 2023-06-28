@@ -67,11 +67,14 @@ Tensorboard Regex
 
 ----------------------------------------------------------------------------------------------------------
 Supervised Learning
-python src/create_SL_data_set.py --train True --net_size 5 --num_topologies 20000 --num_trials 100 --exploration_type CDME
+python src/create_SL_data_set.py --train True --net_size  --num_topologies 20000 --num_trials 100 --exploration_type CDME
 
-python src/create_subact_dataset.py --ego_graph_size 100 --num_subact_targets 100 --num_subact_sets 1 --num_trials_sub 47617 --max_valset_trials 10000 --load_dir data/Ego//100C2/ego_valtrials_RandomCycleExpl/
+python src/create_subact_dataset.py --ego_graph_size 1000 --num_subact_targets 1000 --num_subact_sets 1 --num_trials_sub 59964 --max_valset_trials 10000 --load_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --exploration_type 'Random'
 
-python src/create_subact_dataset.py --ego_graph_size 25 --num_subact_targets 5 --num_subact_sets 80 --num_trials_sub 100 --load_dir data/Ego/25C2/ego_NashEQ/ --cfda True
+python src/create_subact_dataset.py --ego_graph_size 100 --num_subact_targets 5 --num_subact_sets 500 --num_trials_sub 100 --load_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --cfda True
+
+python src/create_subact_dataset.py --ego_graph_size 25 --num_subact_targets 5 --num_subact_sets 80 --num_trials_sub 100 --load_dir data/Ego/25C2/ego_NashEQ/ --cascade_type 'shortPath' --overwrite 'True' --calc_nash_ego True
+
 
 python src/create_SL_data_set.py --train True --exploration_type 'CDME' --net_size 5 --load_dir data/5C2/validation_data/1topo_NashEQ/ --num_trials 100 --num_topologies 1
 
@@ -80,21 +83,26 @@ python src/generate_networks.py --net_save_dir './data/5C2/validation_data/topol
 python src/SL_validate.py  --data_dir './data/5C2/validation_data/2topo_NashEQ/' --q_model_path './models/SL/5C2/garbage_test/best_div.pt' --net_size 5 --mlp_hidden_size 128
 
 subact training
-python src/subact_train.py --ego_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/1sets_100targets_47617trials_RandomCycleExpl/ --exp_name '100_100C2_1sets1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 50 --batch_size 128 --mlp_hidden_size 64 --embed_size 128 --heuristic_features True
+python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl_CfDA/ --exp_name '25_5C2_shortPath1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 50 --batch_size 128 --mlp_hidden_size 64 --embed_size 64 --cascade_type 'shortPath'
 
 python src/subact_train.py --ego_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/1sets_100targets_47617trials_RandomCycleExpl/ --exp_name '100_100C2_1sets_noheuristic1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 128 --mlp_hidden_size 128 --embed_size 64
 
-python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl/ --exp_name '25_5C2_80sets_nofeat1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 64 --mlp_hidden_size 64 --embed_size 32
+python src/subact_train.py --ego_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/500sets_5targets_100trials_RandomCycleExpl_CfDA/ --exp_name '100_5C2_CFDA1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 128 --mlp_hidden_size 64 --embed_size 128
 
 cuda 0 training
-python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl/ --exp_name '25_5C2_80sets3' --mlp_hidden_depth 3 --num_epochs 10000 --sched_step 5000 --val_freq 100 --batch_size 256 --device cuda:0
+python src/subact_train.py --ego_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/1sets_1000targets_59964trials_RandomExpl/ --exp_name '1000_1000C2_1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 128 --mlp_hidden_size 64 --embed_size 128 --device cuda:0
 
 cuda 1 training
-python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl/ --exp_name '25_5C2_80sets1' --mlp_hidden_depth 3 --num_epochs 10000 --sched_step 5000 --val_freq 100 --batch_size 256 --device cuda:1
+python src/subact_train.py --ego_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/200sets_8targets_784trials_RandomCycleExpl/ --exp_name '1000_7C2_1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 256 --mlp_hidden_size 64 --embed_size 64 --device cuda:1
 
 Exploiters
-python src/train_RL_exploiters.py --training_steps 50 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/25_5C2/25_5C2_80sets_nofeat1/' --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --ego_exp_name '80sets_5targets_100trials_RandomCycleExpl' --net_size 25 --exp_name '25C2_exploiters_test'
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/25_25C2/25_25C2_nofeat1/' --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --ego_exp_name '25_25C2_nofeat1' --net_size 25 --exp_name '25_25C2_exploiters1'
 
-python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/100_100C2/100_100C2_1sets2/' --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_exp_name '1sets_100targets_47617trials_RandomCycleExpl' --net_size 100 --exp_name '100C2_nosubsets1'
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/100_100C2/100_100C2_1sets_noheuristic1' --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_exp_name '100_100C2_1sets_noheuristic1' --net_size 100 --exp_name '100_100C2_exploiters1' 
 
-python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 100 --exp_name '100_RTMixed' --exploited_type RTMixed --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist'
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/1000_5C2/1000_5C2_test/' --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_exp_name '1000_5C2_test' --net_size 1000 --exp_name '1000C2_exploiters_test'
+
+
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --exp_name '25_RTMixed1' --exploited_type RTMixed --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist'
+
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 100 --exp_name '100_RTMixed2' --exploited_type RTMixed --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --device 'cuda:0'

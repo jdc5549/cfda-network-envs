@@ -77,12 +77,13 @@ class Validator():
 					for i, data in enumerate(self.data_loader):
 						if self.gnn:
 							(node_features,edge_index,actions),(reward,multi_hot_failures) = data
-							edge_index.to(device)
+							edge_index = edge_index.to(device)
 						else:
 							(node_features,actions), (reward,multi_hot_failures) = data
 							edge_index=None
-						node_features.to(device)
-						actions.to(device)
+
+						node_features = node_features.to(device)
+						actions = actions.to(device)
 						B = reward.shape[0]
 						reward = reward.to(device)
 						multi_hot_failures = multi_hot_failures.to(device)
@@ -98,8 +99,8 @@ class Validator():
 				#Compare to ground truth utility and NashEQ if available
 				if len(self.nashEQ_policies) > 0:
 					for i,env in enumerate(self.envs):
-						atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions)
-						def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions)
+						atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions,device=device)
+						def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions,device=device)
 						atk_pd,atk_Q_val = atk_policy.get_policy(node_features[0],edge_index)
 						def_pd,def_Q_val = def_policy.get_policy(node_features[0],edge_index)
 						# else:

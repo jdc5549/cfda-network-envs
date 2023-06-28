@@ -114,10 +114,8 @@ def perform_training_trials(args,topo_fn,target_set):
     else:
         print(f'Exploration type {args.exploration_type} not recognized. Exiting...')
         exit()
-
     net_size = args.ego_graph_size
     num_trials = args.num_trials_sub
-
     p = args.num_nodes_chosen/net_size
     trial_data = np.zeros((num_trials,2*args.num_nodes_chosen+1)) #last dim represents n attack nodes, n defense nodes, and attacker reward (in that order)
     trial_info = {}
@@ -140,7 +138,6 @@ def perform_val_trials(args,topo_fn,train_actions):
     p = args.num_nodes_chosen/net_size
     env = NetworkCascEnv(net_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
     all_actions = get_combinatorial_actions(net_size,2)
-
     val_actions = []
     break_flag = False
     for i,a1 in enumerate(all_actions):
@@ -213,7 +210,6 @@ def create_dataset(args):
         while any(np.array_equal(subset,arr) for arr in subact_sets):
             subset = np.sort(random.sample(nodes,args.num_subact_targets))
         subact_sets.append(subset)
-    #print(f'Subact Sets: {subact_sets}')
 
     eval_method = f'{args.num_trials_sub}trials_{args.exploration_type}Expl'
     save_dir = data_dir + f'{args.num_subact_sets}sets_{args.num_subact_targets}targets_{eval_method}'
@@ -225,27 +221,30 @@ def create_dataset(args):
     fac_start = time.perf_counter()
     allsets_trialdata = np.zeros((args.num_subact_sets,args.num_trials_sub,2*args.num_nodes_chosen+1))
     allsets_trialinfo = []
-    for i,sa in enumerate(subact_sets):   
+    for i,sa in enumerate(subact_sets):  
         trial_data,trial_info = perform_training_trials(args,topo_fn,sa)
         allsets_trialdata[i] = trial_data
         allsets_trialinfo.append(trial_info)
+
+
+
+    casc_keys = set()
+    from utils import get_combinatorial_actions
+    casc_data = allsets_trialdata.reshape((-1,allsets_trialdata.shape[-1]))
+    all_actions = get_combinatorial_actions(args.ego_graph_size,2)
+    for i,c in enumerate(casc_data):
+        c_tup = tuple(c.astype(int))
+        key = len(all_actions)*all_actions.index(c_tup[:2]) + all_actions.index(c_tup[2:4])
+        if key not in casc_keys:
+            casc_keys.add(key)
+        else:
+            casc_data = np.concatenate((casc_data[:i],casc_data[i+1:]))
     fac_end = time.perf_counter()
     fac_data_time = fac_end-fac_start
-
+    cfac_start = time.perf_counter()
     cfac_trials = None
     cfac_data_time = None
-    casc_keys = set()
     if args.cfda:
-        cfac_start = time.perf_counter()
-
-        from utils import get_combinatorial_actions
-        casc_data = allsets_trialdata.reshape((-1,allsets_trialdata.shape[-1]))
-        all_actions = get_combinatorial_actions(args.ego_graph_size,2)
-        for i,c in enumerate(casc_data):
-            c_tup = tuple(c.astype(int))
-            key = len(all_actions)*all_actions.index(c_tup[:2]) + all_actions.index(c_tup[2:4])
-            if key not in casc_keys:
-                casc_keys.add(key)
         #generate counterfactuals from this data
         p = args.num_nodes_chosen/args.ego_graph_size
         env = NetworkCascEnv(args.ego_graph_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
@@ -254,15 +253,15 @@ def create_dataset(args):
         cfac_end = time.perf_counter()
         cfac_data_time = cfac_end-cfac_start
 
-        np.save(save_dir + f'subact_{args.cascade_type}casc_CFACtrialdata.npy',allsets_trialdata)
+        np.save(save_dir + f'subact_{args.cascade_type}casc_CFACtrialdata.npy',cfac_trials)
         with open(save_dir + f'subact_{args.cascade_type}casc_CFACtrialinfo.pkl','wb') as file:
-            pickle.dump(allsets_trialinfo,file)
+            pickle.dump(cfac_info,file)
 
-    np.save(save_dir + f'subact_{args.cascade_type}casc_trialdata.npy',allsets_trialdata)
+    np.save(save_dir + f'subact_{args.cascade_type}casc_trialdata.npy',casc_data)
     with open(save_dir + f'subact_{args.cascade_type}casc_trialinfo.pkl','wb') as file:
         pickle.dump(allsets_trialinfo,file)
 
-    train_data = allsets_trialdata.reshape((-1,2*args.num_nodes_chosen+1))[:]
+    train_data = casc_data #casc_data.reshape((-1,2*args.num_nodes_chosen+1))[:]
     if args.max_valset_trials > 0:
         if args.cfda:
             train_data = np.concatenate((train_data,cfac_trials))
@@ -291,7 +290,11 @@ if __name__ == '__main__':
     parser.add_argument("--overwrite",default=False,type=bool,help='Will not overwrite directory of same name unless this flag is True')
     args = parser.parse_args()
 
-    _ = create_dataset(args)
+    num_data_total, num_cfac_data,fac_data_time,cfac_data_time = create_dataset(args)
+    print(num_data_total)
+    print(num_cfac_data)
+    print(fac_data_time)
+    print(cfac_data_time)
 
 
 

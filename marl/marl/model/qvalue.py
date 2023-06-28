@@ -32,7 +32,7 @@ class QTable(Model):
     :param obs_sp: (int) The number of possible observations
     :param act_sp: (int) The number of possible actions
     """
-    def __init__(self, obs_sp, act_sp):
+    def __init__(self, obs_sp, act_sp,device='cpu'):
         self.n_obs = obs_sp
         self.n_actions = act_sp
         self.value = torch.zeros((self.n_obs, self.n_actions), dtype=torch.float64)
@@ -62,9 +62,9 @@ class MABTable(Model):
     :param obs_sp: (int) The number of possible observations
     :param act_sp: (int) The number of possible actions
     """
-    def __init__(self, act_sp):
+    def __init__(self, act_sp,device='cpu'):
         self.n_actions = act_sp
-        self.value = torch.zeros(self.n_actions, dtype=torch.float64)
+        self.value = torch.zeros(self.n_actions, dtype=torch.float64,device=device)
     
     @property
     def q_table(self):

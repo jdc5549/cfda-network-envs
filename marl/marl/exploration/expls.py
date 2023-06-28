@@ -3,19 +3,19 @@ import torch
 from . import ExplorationProcess
 
 class UCB1(ExplorationProcess):
-    def __init__(self, n_actions,c=1.7):
+    def __init__(self, n_actions,c=1.7,device='cpu'):
         self.n_actions = n_actions
-        self.count = torch.tensor([1 for _ in range(n_actions)])
-        self.t = torch.tensor(sum(self.count))
+        self.count = torch.tensor([1 for _ in range(n_actions)]).to(device)
+        self.t = sum(self.count)
         self.c = c
 
     def reset(self, t=None):
         """ Reinitialize the state of the process """
-        self.count = [1 for _ in range(self.n_actions)]         
+        self.count = torch.tensor([1 for _ in range(n_actions)]).to(device)
         self.t = sum(self.count)
         
     def update(self, t):
-        self.t = torch.tensor(sum(self.count))
+        self.t = sum(self.count)
             
     def __call__(self, policy):
         q_value = policy.model()

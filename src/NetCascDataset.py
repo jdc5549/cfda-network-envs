@@ -8,6 +8,11 @@ import pickle
 from utils import get_combinatorial_actions
 class NetCascDataset_Subact(Dataset):
     def __init__(self,ego_data_dir,subact_data_dir,casc_type,gnn=False,topo_features=False,val=False):
+        print(subact_data_dir)
+        if 'CfDA' in subact_data_dir:
+            cfda = True
+        else:
+            cfda = False
         self.gnn = gnn
         filename = 'net_0.edgelist'
         topo_path = os.path.join(ego_data_dir, filename)
@@ -23,6 +28,9 @@ class NetCascDataset_Subact(Dataset):
         else:
             casc_data = np.load(subact_data_dir + f"subact_{casc_type}casc_trialdata.npy")
         casc_data = np.reshape(casc_data,(-1,5))
+        if cfda:
+            cfac_data = np.load(subact_data_dir + f"subact_{casc_type}casc_CFACtrialdata.npy")
+            casc_data = np.concatenate((casc_data,cfac_data))
 
         unique_list = []
         kept_idxs = []
@@ -44,10 +52,10 @@ class NetCascDataset_Subact(Dataset):
         self.action_data = casc_data[:,:-1].astype(int)
         self.reward_data = casc_data[:,-1]
 
-        self.z_action_data = torch.zeros((self.action_data.shape[0],2,self.thresholds.shape[0]),dtype=torch.int32)
-        for i,a in enumerate(self.action_data):
-            self.z_action_data[i][0][a[:2]] = 1
-            self.z_action_data[i][1][a[2:]] = 1
+        # self.z_action_data = torch.zeros((self.action_data.shape[0],2,self.thresholds.shape[0]),dtype=torch.int32)
+        # for i,a in enumerate(self.action_data):
+        #     self.z_action_data[i][0][a[:2]] = 1
+        #     self.z_action_data[i][1][a[2:]] = 1
 
         self.comb_action_idxs = torch.zeros((self.action_data.shape[0],2),dtype=torch.long)
         for i,a in enumerate(self.action_data):

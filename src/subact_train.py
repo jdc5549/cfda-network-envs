@@ -6,6 +6,7 @@ import numpy as np
 import os
 import sys
 import re
+from time import perf_counter
 
 from torch.utils.data import DataLoader as DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -18,6 +19,7 @@ from models import MLP_Critic
 from tqdm import tqdm
 
 if __name__ == '__main__':
+	tic = perf_counter()
 	import argparse
 	parser = argparse.ArgumentParser(description='Netcasc SL Training Args')
 	parser.add_argument("--ego_data_dir",default=None,type=str,help='Directory to load data from.')
@@ -121,6 +123,9 @@ if __name__ == '__main__':
 	optimizer = optim.Adam(q_model.parameters(), lr=args.learning_rate)  # Replace with your own optimizer and learning rate
 	scheduler = lr_scheduler.StepLR(optimizer, step_size=args.sched_step, gamma=args.sched_gamma)
 
+	toc = perf_counter()
+	print(f'Time until training start: {toc-tic} seconds')
+	tic = perf_counter()
 	# Create a progress bar for epochs
 	epoch_progress_bar = tqdm(total=args.num_epochs, desc='Training Progress')
 	best_div = 1e6
@@ -136,9 +141,7 @@ if __name__ == '__main__':
 		for i, data in enumerate(data_loader):
 			if args.gnn_model is not None:
 				(node_features,edge_index,actions),(reward,multi_hot_failures) = data
-				net_features.to(device)
-				edge_index.to(device)
-				actions.to(device)
+				edge_index = edge_index.to(device)
 				#feat_topo = embed_model(net_features,edge_index)
 			else:
 				(node_features,actions), (reward,multi_hot_failures) = data
@@ -147,6 +150,8 @@ if __name__ == '__main__':
 			# for i in range(B):
 			# 	atk_idx[i] = torch.tensor([torch.eq(subact_set[i],a).nonzero()[0][0] for a in atk_acts[i]])
 			# 	def_idx[i] = torch.tensor([torch.eq(subact_set[i],d).nonzero()[0][0] for d in def_acts[i]])
+			node_features = node_features.to(device)
+			actions = actions.to(device)
 			reward = reward.to(device)
 			multi_hot_failures = multi_hot_failures.to(device)
 
@@ -230,8 +235,9 @@ if __name__ == '__main__':
 		scheduler.step()
 		writer.add_scalar("Learning_Parameters/learning_rate",optimizer.param_groups[0]['lr'],epoch)
 
+	toc = perf_counter()
 	epoch_progress_bar.close()
-	print('Training complete!')
+	print(f'Training completeed in {toc-tic} seconds.')
 	model_save_path = os.path.join(model_save_dir,f'final.pt')
 	torch.save(q_model.state_dict(),model_save_path)
 	print(f'Final Model with util error of {util_err} and NashEQ div of {nash_eq_div} saved to {model_save_path}')

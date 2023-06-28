@@ -1,4 +1,21 @@
 import random
+import numpy as np
+
+class RandomExploration(object):
+    def __init__(self,target_set):
+        self.target_set = target_set
+
+    def reset(self):
+        pass
+
+    def update(self):
+        pass
+
+    def __call__(self):
+        atk_action = np.random.choice(self.target_set,2,replace=False)
+        def_action = np.random.choice(self.target_set,2,replace=False)
+        action = [list(atk_action),list(def_action)]
+        return action
 
 class SLExploration(object): #general SL exploration class
     def __init__(self,target_set):
@@ -16,11 +33,6 @@ class SLExploration(object): #general SL exploration class
 
     def __call__(self):
         raise NotImplementedError
-
-class RandomExploration(SLExploration):
-    def __call__(self):
-        action = random.choice(self.all_actions)
-        return action
 
 class RandomCycleExploration(SLExploration): 
     def __init__(self,target_set):
