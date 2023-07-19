@@ -31,7 +31,7 @@ if __name__ == '__main__':
 	parser.add_argument("--gnn_model",default=None,type=str,help='What type of GNN model to use, if any.')
 	parser.add_argument("--embed_size",default=16,type=int,help='Size of GNN embedded graph representation.')
 	parser.add_argument("--num_epochs",default=1000,type=int,help='Number of training epochs to perform.')
-	parser.add_argument("--learning_rate",default=0.001,type=float,help='Reinforcement Learning rate.')
+	parser.add_argument("--learning_rate",default=0.001,type=float,help='Learning rate.')
 	parser.add_argument("--sched_step",default=500,type=int,help='How often to reduce the learning rate for training NN model')
 	parser.add_argument("--sched_gamma",default=0.1,type=float,help='How much to reduce the learning rate after shed_step steps')
 	parser.add_argument("--mlp_hidden_size",default=64,type=int,help='Hidden layer size for MLP nets used for RL agent.')
@@ -40,12 +40,12 @@ if __name__ == '__main__':
 	parser.add_argument("--heuristic_features",default=False,type=bool,help='Whether to use heuristic topological features as input to the neural network.')
 	parser.add_argument("--batch_size",default=64,type=int,help='Batch size for data loader.')
 	parser.add_argument("--val_freq",default=100,type=int,help='Frequency (in epochs) at which to validate model.')
+	parser.add_argument("--cfda",default=False,type=bool,help='Whether to use CfDA data during training.')
 	parser.add_argument("--device",default='cpu',type=str,help='Device to perform training on.')
 
 	args = parser.parse_args()
 	pattern = r'/(\d+)C2/'
 	match = re.search(pattern, args.ego_data_dir)
-
 	if match:
 	    num_nodes = int(match.group(1))
 	else:
@@ -78,7 +78,7 @@ if __name__ == '__main__':
 		num_targets = dataset.subact_sets.shape[1]
 		data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 	else:
-		dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=False,topo_features=args.heuristic_features)
+		dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=False,topo_features=args.heuristic_features,cfda=args.cfda)
 		#Embedding = HeuristicActionEmbedding(dataset.topology,dataset.thresholds)
 		#embedded_act = Embedding.embed_action(torch.tensor([[0,1]]))
 		#act_embed_size = embedded_act.shape[1]
@@ -105,13 +105,12 @@ if __name__ == '__main__':
 	model_save_dir = args.model_save_dir + f'{num_nodes}_{num_targets}C2/{args.exp_name}/'
 	if not os.path.isdir(model_save_dir):
 		os.makedirs(model_save_dir)
-
 	#init Validator
 	p = 2/num_nodes
 	nash_eqs_dir = args.ego_data_dir + f'{args.cascade_type}casc_NashEQs/'
 	val_data_path = args.subact_data_dir + f'subact_{args.cascade_type}casc_valdata.npy'
 	if os.path.isfile(val_data_path):
-		val_dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=gnn,val=True,topo_features=args.heuristic_features)
+		val_dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=gnn,val=True,topo_features=args.heuristic_features,cfda=False)
 	else: 
 		val_dataset = None
 	test_env = [NetworkCascEnv(num_nodes,p,p,'File',cascade_type=args.cascade_type,

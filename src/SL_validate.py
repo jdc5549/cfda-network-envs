@@ -79,14 +79,13 @@ class Validator():
 							(node_features,edge_index,actions),(reward,multi_hot_failures) = data
 							edge_index = edge_index.to(device)
 						else:
-							(node_features,actions), (reward,multi_hot_failures) = data
+							(node_features,actions), (reward,_) = data
 							edge_index=None
 
 						node_features = node_features.to(device)
 						actions = actions.to(device)
 						B = reward.shape[0]
 						reward = reward.to(device)
-						multi_hot_failures = multi_hot_failures.to(device)
 
 						if self.gnn:
 							pred = q_model(actions,node_features,edge_index)

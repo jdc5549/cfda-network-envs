@@ -4,15 +4,16 @@ from torch.utils.data import Dataset, DataLoader
 import os
 import networkx as nx
 import random
+import math
 import pickle
 from utils import get_combinatorial_actions
+import multiprocessing as mp
+import ctypes as c
+from tqdm import tqdm
+
 class NetCascDataset_Subact(Dataset):
-    def __init__(self,ego_data_dir,subact_data_dir,casc_type,gnn=False,topo_features=False,val=False):
-        print(subact_data_dir)
-        if 'CfDA' in subact_data_dir:
-            cfda = True
-        else:
-            cfda = False
+    def __init__(self,ego_data_dir,subact_data_dir,casc_type,gnn=False,topo_features=False,val=False,cfda=True):
+        max_cfac_ratio = 10
         self.gnn = gnn
         filename = 'net_0.edgelist'
         topo_path = os.path.join(ego_data_dir, filename)
@@ -28,22 +29,25 @@ class NetCascDataset_Subact(Dataset):
         else:
             casc_data = np.load(subact_data_dir + f"subact_{casc_type}casc_trialdata.npy")
         casc_data = np.reshape(casc_data,(-1,5))
-        if cfda:
+        if cfda and not val:
             cfac_data = np.load(subact_data_dir + f"subact_{casc_type}casc_CFACtrialdata.npy")
-            casc_data = np.concatenate((casc_data,cfac_data))
-
-        unique_list = []
-        kept_idxs = []
-        self.casc_keys = set()
+            shuffled_indices = np.random.permutation(len(cfac_data))
+            limited_data = cfac_data[shuffled_indices]
+            limited_data = limited_data[:max_cfac_ratio*len(casc_data)]
+            casc_data = np.concatenate((casc_data,limited_data))
+            #casc_data = cfac_data
         all_actions = get_combinatorial_actions(self.thresholds.shape[0],2)
-        for i,c in enumerate(casc_data):
-            c_tup = tuple(c.astype(int))
-            key = len(all_actions)*all_actions.index(c_tup[:2]) + all_actions.index(c_tup[2:4])
-            if key not in self.casc_keys:
-                self.casc_keys.add(key)
-                kept_idxs.append(i)
-                unique_list.append(c)
-        casc_data = np.stack(unique_list)
+        # unique_list = []
+        # kept_idxs = []
+        # self.casc_keys = set()
+        # for i,c in enumerate(casc_data):
+        #     c_tup = tuple(c.astype(int))
+        #     key = len(all_actions)*all_actions.index(c_tup[:2]) + all_actions.index(c_tup[2:4])
+        #     if key not in self.casc_keys:
+        #         self.casc_keys.add(key)
+        #         kept_idxs.append(i)
+        #         unique_list.append(c)
+        # casc_data = np.stack(unique_list)
         # if val:
         #     print(f'Val Data: {casc_data}')
         # else:
@@ -57,33 +61,67 @@ class NetCascDataset_Subact(Dataset):
         #     self.z_action_data[i][0][a[:2]] = 1
         #     self.z_action_data[i][1][a[2:]] = 1
 
-        self.comb_action_idxs = torch.zeros((self.action_data.shape[0],2),dtype=torch.long)
-        for i,a in enumerate(self.action_data):
-            atk_act = tuple(a[:2])
-            comb_idx = all_actions.index(atk_act)
-            self.comb_action_idxs[i,0] = comb_idx
-            def_act = tuple(a[2:])
-            comb_idx = all_actions.index(def_act)
-            self.comb_action_idxs[i,1] = comb_idx
+        num_processes = mp.cpu_count()-2
+        chunk_size = len(self.action_data) // num_processes
 
-        info_fn = subact_data_dir + f"subact_{casc_type}casc_trialinfo.pkl"
-        with open(info_fn,'rb') as f:
-            info_data = pickle.load(f)
-
-        merged_info = {}
-        for i,info in enumerate(info_data):
-            offset = i*100
-            for key,value in info.items():
-                new_key = key + offset
-                merged_info[new_key] = value
-
-
+        with mp.Pool(processes=num_processes) as pool:
+            mp_array = mp.Array('i', self.action_data.shape[0]*2)
+            result_comb_action_idxs = np.frombuffer(mp_array.get_obj(),c.c_int)
+            result_comb_action_idxs = np.reshape(result_comb_action_idxs,(self.action_data.shape[0],2))
+            args = [(i*chunk_size, (i+1)*chunk_size, self.action_data, all_actions, result_comb_action_idxs)
+                    for i in range(num_processes)]
+            pool.starmap(self.process_chunk, args)
+            # Convert the shared array to a torch tensor
+            self.comb_action_idxs = torch.tensor(result_comb_action_idxs, dtype=torch.long).view(-1, 2)
+        # self.comb_action_idxs = torch.zeros((self.action_data.shape[0],2),dtype=torch.long)
+        # for i,a in enumerate(self.action_data):
+        #     atk_act = tuple(a[:2])
+        #     comb_idx = all_actions.index(atk_act)
+        #     self.comb_action_idxs[i,0] = comb_idx
+        #     def_act = tuple(a[2:])
+        #     comb_idx = all_actions.index(def_act)
+        #     self.comb_action_idxs[i,1] = comb_idx
         self.failset_onehot_data = torch.zeros((casc_data.shape[0],self.thresholds.shape[0]))
-        i = 0
-        for key,value in merged_info.items():
-            if key in kept_idxs:
-                self.failset_onehot_data[i,value['fail_set']] = 1
-                i += 1
+        if not val:
+            info_fn = subact_data_dir + f"subact_{casc_type}casc_trialinfo.pkl"
+            with open(info_fn,'rb') as f:
+                casc_info = pickle.load(f)
+            # merged_info = {}
+            # for i,info in enumerate(info_data):
+            #     offset = i*100
+            #     for key,value in info.items():
+            #         new_key = key + offset
+            #         merged_info[new_key] = value
+            if cfda:
+                cfda_info_fn = subact_data_dir + f"subact_{casc_type}casc_CFACtrialinfo.pkl"
+                with open(cfda_info_fn,'rb') as f:
+                    cfac_info = pickle.load(f)
+                limited_info = [cfac_info[i] for i in shuffled_indices]
+                limited_info = limited_info[:max_cfac_ratio*len(casc_info)]
+                casc_info = casc_info + limited_info
+            with tqdm(total=len(casc_info),desc='Processing Info') as pbar:
+                for i,info in enumerate(casc_info):
+                    self.failset_onehot_data[i,info['fail_set']] = 1
+                    pbar.update(1)
+
+            for i,r in enumerate(self.reward_data):
+                mh_r = torch.mean(self.failset_onehot_data[i]).cpu().numpy()
+                r = np.float32(r)
+                try:
+                    assert math.isclose(mh_r,r)
+                except:
+                    print(casc_info[i])
+                    print(mh_r)
+                    print(r)
+                    print(self.failset_onehot_data[i])
+                    exit()
+
+        #i = 0
+        # for key,value in casc_info.items():
+        #     if key in kept_idxs:
+        #         self.failset_onehot_data[i,value['fail_set']] = 1
+        #         i += 1
+
         self.subact_sets = np.load(subact_data_dir + 'subact_sets.npy')
         if len(self.thresholds) > 0:
             max_t = np.max(self.thresholds)
@@ -106,7 +144,28 @@ class NetCascDataset_Subact(Dataset):
                 self.net_features = embed
         self.net_features = self.net_features.flatten()
             #self.feat_topo = feat_t
-            #self.feat_topo_data = torch.permute(self.feat_topo_data,(0,2,1))          
+            #self.feat_topo_data = torch.permute(self.feat_topo_data,(0,2,1))      
+
+    def process_chunk(self,start, end, action_data, all_actions, result_comb_action_idxs):
+        if start == 0:
+            for i in tqdm(range(start, end), desc="First Chunk Progress", leave=False):
+                a = action_data[i]
+                atk_act = tuple(a[:2])
+                comb_idx = all_actions.index(atk_act)
+                result_comb_action_idxs[i, 0] = comb_idx
+                def_act = tuple(a[2:])
+                comb_idx = all_actions.index(def_act)
+                result_comb_action_idxs[i, 1] = comb_idx                
+        else:
+            for i in range(start, end):
+                a = action_data[i]
+                atk_act = tuple(a[:2])
+                comb_idx = all_actions.index(atk_act)
+                result_comb_action_idxs[i, 0] = comb_idx
+                def_act = tuple(a[2:])
+                comb_idx = all_actions.index(def_act)
+                result_comb_action_idxs[i, 1] = comb_idx
+
     def __len__(self):
         # Return the total number of samples in your dataset
         return self.reward_data.size

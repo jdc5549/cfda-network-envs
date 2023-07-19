@@ -5,12 +5,14 @@ import nashpy as nash
 import pickle
 import random
 import time
+import itertools
 
 from netcasc_gym_env import NetworkCascEnv
 from cascade_cfda import Counterfactual_Cascade_Fns
 from utils import create_random_nets, ncr, get_combinatorial_actions
 from scipy.optimize import linprog
 from scipy.stats import entropy
+from tqdm import tqdm
 
 def get_nash_eqs(env):
     progress_step = 0.2
@@ -116,8 +118,8 @@ def perform_training_trials(args,topo_fn,target_set):
         exit()
     net_size = args.ego_graph_size
     num_trials = args.num_trials_sub
-    p = args.num_nodes_chosen/net_size
-    trial_data = np.zeros((num_trials,2*args.num_nodes_chosen+1)) #last dim represents n attack nodes, n defense nodes, and attacker reward (in that order)
+    p = 2/net_size
+    trial_data = np.zeros((num_trials,5)) #last dim represents n attack nodes, n defense nodes, and attacker reward (in that order)
     trial_info = {}
     exploration.reset()
     env = NetworkCascEnv(net_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
@@ -126,7 +128,7 @@ def perform_training_trials(args,topo_fn,target_set):
         exploration.update()
         _, reward, _, info = env.step(action)
         trial_data[j,:] = np.concatenate((action[0], action[1], [reward[0]])) 
-        trial_info[j] = info
+        trial_info[j] = {key: value for key,value in info.items() if key != 'edges'}
 
     # np.save(data_dir + f'{args.cascade_type}casc_trialdata.npy',trial_data)
     # with open(data_dir + f'{args.cascade_type}casc_trialinfo.pkl','wb') as file:
@@ -135,21 +137,33 @@ def perform_training_trials(args,topo_fn,target_set):
 
 def perform_val_trials(args,topo_fn,train_actions):
     net_size = args.ego_graph_size
-    p = args.num_nodes_chosen/net_size
+    p = 2/net_size
     env = NetworkCascEnv(net_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
     all_actions = get_combinatorial_actions(net_size,2)
     val_actions = []
     break_flag = False
-    for i,a1 in enumerate(all_actions):
-        for j,a2 in enumerate(all_actions):
+    action_combinations = list(itertools.combinations(all_actions, 2))
+    shuffled_combinations = action_combinations.copy()
+    random.shuffle(shuffled_combinations)
+
+    with tqdm(total=args.max_valset_trials, desc='Validation Trials', unit='iteration') as pbar:
+        for a1,a2 in shuffled_combinations:
             casc = a1 + a2
-            if not np.any(np.all(train_actions == casc,axis=1)):
-                val_actions.append((a1,a2))
+            if not np.any(np.all(train_actions == casc, axis=1)):
+                val_actions.append((a1, a2))
+                pbar.update(1)  # Update the progress bar with each iteration
             if len(val_actions) >= args.max_valset_trials:
-                break_flag = True
                 break
-        if break_flag:
-            break
+    # for i,a1 in enumerate(all_actions):
+    #     for j,a2 in enumerate(all_actions):
+    #         casc = a1 + a2
+    #         if not np.any(np.all(train_actions == casc,axis=1)):
+    #             val_actions.append((a1,a2))
+    #         if len(val_actions) >= args.max_valset_trials:
+    #             break_flag = True
+    #             break
+    #     if break_flag:
+    #         break
     val_trial_data = np.zeros((len(val_actions),5))
     for j,action in enumerate(val_actions):
         _, reward, _, info = env.step(action)
@@ -159,6 +173,18 @@ def perform_val_trials(args,topo_fn,train_actions):
 def subset_selection(method):
     if method == 'Random':
         pass
+
+# def process_subact_set(sa,arg1):
+#     topo_fn = arg1
+#     trial_data, trial_info = perform_training_trials(args, topo_fn, sa)
+#     return trial_data, trial_info
+
+def process_subact_set(args, topo_fn, sa):
+    trial_data, trial_info = perform_training_trials(args, topo_fn, sa)
+    return trial_data, trial_info
+
+def update_progress(pbar):
+    pbar.update()
 
 def create_dataset(args):
     if args.cascade_type not in ['threshold','shortPath','coupled']:
@@ -219,49 +245,95 @@ def create_dataset(args):
     np.save(save_dir + 'subact_sets.npy',np.stack(subact_sets))
 
     fac_start = time.perf_counter()
-    allsets_trialdata = np.zeros((args.num_subact_sets,args.num_trials_sub,2*args.num_nodes_chosen+1))
-    allsets_trialinfo = []
-    for i,sa in enumerate(subact_sets):  
-        trial_data,trial_info = perform_training_trials(args,topo_fn,sa)
-        allsets_trialdata[i] = trial_data
-        allsets_trialinfo.append(trial_info)
 
+    # allsets_trialdata = np.zeros((args.num_subact_sets,args.num_trials_sub,5))
+    # allsets_trialinfo = [[] for i in range(args.num_subact_sets)]
+    # casc_info = []
+    # for i,sa in enumerate(subact_sets):  
+    #     trial_data,trial_info = perform_training_trials(args,topo_fn,sa)
+    #     allsets_trialdata[i] = trial_data
+    #     allsets_trialinfo.append(trial_info)
+    #     for key,info in trial_info.items():
+    #         casc_info.append(info)
+    #     fac_data_pbar.update()
+    # fac_data_pbar.close()
 
+    from multiprocessing import Pool,Manager,cpu_count
+    manager = Manager()
+    shared_allsets_trialdata = manager.list(np.zeros((args.num_subact_sets, args.num_trials_sub, 5)))
+    shared_allsets_trialinfo = manager.list([[] for _ in range(args.num_subact_sets)])
+    shared_casc_info = manager.list()
+    # num_chunks = cpu_count()-2
+    # chunk_size = len(subset_combinations) // num_chunks
+    # chunks = [subset_combinations[i:i+chunk_size] for i in range(0, len(subset_combinations), chunk_size)]
+    from functools import partial
+    with Pool(processes=cpu_count()-2) as pool, tqdm(total=len(subact_sets), desc='Fac Data Progress') as pbar:
+        for i, (trial_data, trial_info) in enumerate(pool.imap_unordered(partial(process_subact_set, args, topo_fn), subact_sets)):
+            shared_allsets_trialdata[i] = trial_data
+            shared_allsets_trialinfo[i] = trial_info
+            for key, info in trial_info.items():
+                try:
+                    shared_casc_info.append(info)
+                except:
+                    print(info)
+            update_progress(pbar)
+
+    allsets_trialdata = np.array(shared_allsets_trialdata)
+    allsets_trialinfo = list(shared_allsets_trialinfo)
+    casc_info = list(shared_casc_info)  
 
     casc_keys = set()
     from utils import get_combinatorial_actions
     casc_data = allsets_trialdata.reshape((-1,allsets_trialdata.shape[-1]))
     all_actions = get_combinatorial_actions(args.ego_graph_size,2)
-    for i,c in enumerate(casc_data):
-        c_tup = tuple(c.astype(int))
-        key = len(all_actions)*all_actions.index(c_tup[:2]) + all_actions.index(c_tup[2:4])
-        if key not in casc_keys:
-            casc_keys.add(key)
-        else:
-            casc_data = np.concatenate((casc_data[:i],casc_data[i+1:]))
+    duplicate_bool = []
+
+    duplicate_bool = []  # Initialize the list outside the loop
+    with tqdm(total=len(casc_data), desc='Filtering duplicates in fac data', unit='iteration') as pbar:
+        for i,c in enumerate(casc_data):
+            c_tup = tuple(c.astype(int))
+            key = len(all_actions) * all_actions.index((min(c_tup[:2]), max(c_tup[:2]))) + all_actions.index((min(c_tup[2:4]), max(c_tup[2:4])))
+            if key not in casc_keys:
+                casc_keys.add(key)
+                duplicate_bool.append(False)
+            else:
+                duplicate_bool.append(True)
+            pbar.update(1)  # Update the progress bar with each iteration
+    # for i,c in enumerate(casc_data):
+    #     c_tup = tuple(c.astype(int))
+    #     key = len(all_actions)*all_actions.index((min(c_tup[:2]),max(c_tup[:2]))) + all_actions.index((min(c_tup[2:4]),max(c_tup[2:4])))
+    #     if key not in casc_keys:
+    #         casc_keys.add(key)
+    #         duplicate_bool.append(False)
+    #     else:
+    #         duplicate_bool.append(True)
+
+    casc_data = casc_data[~np.array(duplicate_bool)]
+    casc_info = [casc_info[i] for i,dup in enumerate(duplicate_bool) if not dup]
+    #     else:
+    #         casc_data = np.concatenate((casc_data[:i],casc_data[i+1:]))
+    #         casc_info = casc_info[:i] + casc_info[i+1:]
     fac_end = time.perf_counter()
     fac_data_time = fac_end-fac_start
-    cfac_start = time.perf_counter()
+
     cfac_trials = None
     cfac_data_time = None
     if args.cfda:
         #generate counterfactuals from this data
-        p = args.num_nodes_chosen/args.ego_graph_size
+        p = 2/args.ego_graph_size
         env = NetworkCascEnv(args.ego_graph_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
         cfac_fns = Counterfactual_Cascade_Fns(env)
-        cfac_trials, cfac_info = cfac_fns.gen_cross_subset_cfacs(allsets_trialdata,allsets_trialinfo,casc_keys,all_actions)   
-        cfac_end = time.perf_counter()
-        cfac_data_time = cfac_end-cfac_start
-
+        cfac_trials,cfac_info,cfac_data_time = cfac_fns.gen_cross_subset_cfacs(allsets_trialdata,allsets_trialinfo,casc_keys,all_actions,max_ratio=100)
+        print('returned from gen_cross_subset_cfacs')
         np.save(save_dir + f'subact_{args.cascade_type}casc_CFACtrialdata.npy',cfac_trials)
         with open(save_dir + f'subact_{args.cascade_type}casc_CFACtrialinfo.pkl','wb') as file:
             pickle.dump(cfac_info,file)
 
     np.save(save_dir + f'subact_{args.cascade_type}casc_trialdata.npy',casc_data)
     with open(save_dir + f'subact_{args.cascade_type}casc_trialinfo.pkl','wb') as file:
-        pickle.dump(allsets_trialinfo,file)
+        pickle.dump(casc_info,file)
 
-    train_data = casc_data #casc_data.reshape((-1,2*args.num_nodes_chosen+1))[:]
+    train_data = casc_data #casc_data.reshape((-1,5))[:]
     if args.max_valset_trials > 0:
         if args.cfda:
             train_data = np.concatenate((train_data,cfac_trials))
@@ -275,7 +347,6 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='SL Dataset Creation Args')
     parser.add_argument("--ego_graph_size",default=10,type=int,help='Number of nodes in the top level graph.')
-    parser.add_argument("--num_nodes_chosen",default=2,type=int,help='Number of nodes attacker and defender choose to attack/defend')
     parser.add_argument("--num_subact_targets",default=5,type=int,help='Number of nodes in the subaction spaces.')
     parser.add_argument("--num_subact_sets",default=10,type=int,help='How many subaction spaces to do trials for.')
     parser.add_argument("--cfda",default=False,type=bool,help='Whether to use CfDA for exploration.')
@@ -291,14 +362,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     num_data_total, num_cfac_data,fac_data_time,cfac_data_time = create_dataset(args)
-    print(num_data_total)
-    print(num_cfac_data)
-    print(fac_data_time)
-    print(cfac_data_time)
-
-
-
-
-
-
-
+    print(f'Num Factual Data: {num_data_total}')
+    print(f'Num Cfactual Data: {num_cfac_data}')
+    print(f'Time to Gen Fac Data: {fac_data_time}')
+    print(f'Time to Gen CFAc Data: {cfac_data_time}')

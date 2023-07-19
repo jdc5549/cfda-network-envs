@@ -1,80 +1,15 @@
-sudo grub-install /dev/nvme0n1
-
-
-python src/couplednetworks_gym_main.py --train True --training_steps 5000 --test_freq 100 --save_freq 100 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg' --exp_name '10c1d1_hrmbtwn_rebut' --p 0.1 --nash_eqs_dir 'output/nasheqs/10n_p10' --learning_rate 0.01
-python src/couplednetworks_gym_main.py --train True --training_steps 500000 --test_freq 10000 --save_freq 5000 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg' --exp_name '10c1d1_rebut_cond1_tab' --p 0.1 --nash_eqs_dir 'output/nasheqs/10n_p10' --learning_rate 0.01 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_10n_2.422deg' --tabular_q True --discrete_obs True
-python src/couplednetworks_gym_main.py --train True --training_steps 1000000 --test_freq 10000 --save_freq 5000 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg' --exp_name '10c2d1_rebut' --learning_rate 0.01 --p 0.2 --tabular_q True --nash_eqs_dir 'output/nasheqs/10n_p20' --degree 1
-python src/couplednetworks_gym_main.py --train True --training_steps 1000000 --test_freq 10000 --save_freq 5000 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg' --exp_name '10c2d1_rebut' --learning_rate 0.01 --p 0.2 --tabular_q True --nash_eqs_dir 'output/nasheqs/10n_p20' --degree 1
-python src/couplednetworks_gym_main.py --train True --training_steps 1000 --test_freq 100 --save_freq 5000 --test_nets_dir 'data/networks/generated/SF_8n_2.422deg' --exp_name '8c2d1_test' --learning_rate 0.001 --p 0.25 --nash_eqs_dir 'output/nasheqs/8n_p25' --degree 1 --net_size 8
-python src/couplednetworks_gym_main.py --train True --training_steps 1000000 --test_freq 10000 --save_freq 5000 --test_nets_dir 'data/networks/generated/SF_8n_2.422deg' --exp_name '8c2d1_1' --learning_rate 0.001 --p 0.25 --nash_eqs_dir 'output/nasheqs/8n_p25' --degree 1 --net_size 8
-
-python src/couplednetworks_gym_main.py --train True --training_steps 10000 --test_freq 1000 --save_freq 5000 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_CoupledNetsEnv2_p0.1' --exp_name 'coupled_garbage_test' --p 0.1 --nash_eqs_dir 'output/nasheqs/10n_p10_CoupledNetsEnv2' --learning_rate 0.1 --net_file_train_dir 'data/networks/generated/SF_10n_2.422deg_CoupledNetsEnv2_p0.1' --net_type 'File'
-
-python src/couplednetworks_gym_main.py --train True --training_steps 10000 --test_freq 1000 --save_freq 5000 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_memorize' --exp_name '10c1d1_mem_test_orig' --p 0.1 --nash_eqs_dir 'output/nasheqs/10n_p10_memorize' --learning_rate 0.01 --net_file_train_dir 'data/networks/generated/SF_10n_2.422deg_memorize'
-
-
-python src/generate_networks.py --num_nodes 5 --net_save_dir 'data/networks/generated/' --nash_eqs_dir 'data/nasheqs/' --p 0.40 --env_type 'NetworkCascEnv' --num2gen 10 --cascade_type 'all'
-
-python src/generate_networks.py --num_nodes 50 --net_save_dir 'data/networks/generated/' --nash_eqs_dir 'data/nasheqs/' --p 0.04 --env_type 'NetworkCascEnv' --num2gen 10 --cascade_type 'all'
-
---------------------------------------------------------------------------------------------------------------------------------------------------CFA
- 
-python src/couplednetworks_gym_cfa.py --train True --net_size 10 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.2' --p 0.2 --nash_eqs_dir 'output/nasheqs/10n_p20_SimpleCascadeEnv' --degree 1 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.2' --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 10000 --sched_gamma 0.1 --test_freq 100 --save_freq 10000 --training_steps 20000
-
-python src/couplednetworks_gym_cfa.py --train True --net_size 10 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.1_single' --p 0.1 --nash_eqs_dir 'output/nasheqs/10n_p10_SimpleCascadeEnv_single' --degree 1 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.1_single' --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 10000 --sched_gamma 0.1 --test_freq 10 --save_freq 10000 --training_steps 20000
-
-10nc1 Single file
-python src/main.py --train True --net_size 10 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.1_allCasc_1nets' --p 0.1 --nash_eqs_dir 'output/nasheqs/10n_p10_SimpleCascadeEnv_allcasc_single/' --degree 1 --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 2500 --sched_gamma 0.1 --test_freq 500 --save_freq 500 --training_steps 5000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.1_allCasc_1nets' --cascade_type 'shortest_path'
-
-10nc1 Double file
-python src/couplednetworks_gym_cfa.py --train True --net_size 10 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_NetworkCascEnv_p0.1_allCasc_10nets' --p 0.1 --nash_eqs_dir 'data/nasheqs/10n_p10_SimpleCascadeEnv_double' --degree 1 --exp_name '10nc1_doublefile1' --learning_rate 0.001 --sched_step 5000 --sched_gamma 0.1 --test_freq 500 --save_freq 500 --training_steps 20000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.1_double' 
-
-10nc1 Multi-file
-python src/main.py --train True --net_size 10 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_NetworkCascEnv_p0.1_allCasc_10nets' --p 0.1 --nash_eqs_dir 'data/nasheqs/SF_10n_2.422deg_NetworkCascEnv_p0.1_allCasc_10nets' --degree 1 --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 10000 --sched_gamma 0.1 --test_freq 1000 --save_freq 1000 --training_steps 20000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_10n_2.422deg_NetworkCascEnv_p0.1_allCasc_10nets' --mlp_hidden_size 64 --batch_size 64 --cascade_type threshold
-
-10nc1 Random Topology
-python src/couplednetworks_gym_cfa.py --train True --net_size 10 --test_nets_dir 'data/networks/generated/SF_10n_2.422deg_SimpleCascadeEnv_p0.1' --p 0.1 --nash_eqs_dir 'output/nasheqs/10n_p10_SimpleCascadeEnv' --degree 1 --exp_name '10nc1_random8' --learning_rate 0.001 --sched_step 100000 --sched_gamma 0.1 --test_freq 1000 --save_freq 1000 --training_steps 200000 --net_type 'SF'
-
-5c2 Single Topology
-python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --degree 2 --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 2500 --sched_gamma 0.1 --test_freq 500 --save_freq 500 --training_steps 5000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_1nets' --cascade_type 'threshold' --exploration_type 'Combinatorial'
-
-5c2 Multi-File
-python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --degree 2 --exp_name 'comb_expl_mftest3' --learning_rate 0.001 --sched_step 5000 --sched_gamma 0.1 --test_freq 1000 --save_freq 1000 --training_steps 10000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --cascade_type threshold --exploration_type 'Combinatorial' 
-
---eps_fin 1.0 --fin_expl 1
-
---exploration_type 'EpsGreedy' --eps_fin 1.0 --fin_expl 1
-
-5c2 Random Topology
-python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --p 0.4 --nash_eqs_dir 'data/nasheqs/SF_5n_2.422deg_NetworkCascEnv_p0.4_allCasc_10nets' --degree 2 --exp_name 'cdme_expl1' --learning_rate 0.001 --sched_step 25000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 50000 --net_type 'SF' --cascade_type threshold --exploration_type 'Combinatorial' --topo_eps 10
---eps_fin 1.0 --fin_expl 1
-
-25c2 Multi-File
-python src/main.py --train True --net_size 25 --test_nets_dir 'data/networks/generated/SF_25n_2.422deg_NetworkCascEnv_p0.08_allCasc_10nets' --p 0.08 --nash_eqs_dir 'data/nasheqs/SF_25n_2.422deg_NetworkCascEnv_p0.08_allCasc_10nets' --degree 2 --exp_name '25c2_CFA_thresh_randex_mf1' --learning_rate 0.001 --sched_step 10000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 30000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_25n_2.422deg_NetworkCascEnv_p0.08_allCasc_10nets' --cascade_type threshold --cfa True --eps_fin 1.0 --fin_expl 1
-
-50c2 Single-File
-python src/main.py --train True --net_size 50 --test_nets_dir 'data/networks/generated/SF_50n_2.422deg_NetworkCascEnv_p0.04_thresholdCasc_1nets' --p 0.04 --nash_eqs_dir 'data/nasheqs/SF_50n_2.422deg_NetworkCascEnv_p0.04_thresholdCasc_1nets' --degree 2 --exp_name '50c2_thresh_rlex_sf1' --learning_rate 0.001 --sched_step 10000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 20000 --net_type 'File' --net_file_train_dir 'data/networks/generated/SF_50n_2.422deg_NetworkCascEnv_p0.04_thresholdCasc_1nets' --cascade_type threshold
-
-Random Topology File CFA
-python src/main.py --train True --net_size 5 --test_nets_dir 'data/networks/generated/SF_5n_2.422deg_SimpleCascadeEnv_p0.4' --p 0.4 --nash_eqs_dir 'output/nasheqs/5n_p40_SimpleCascadeEnv' --degree 2 --exp_name 'test_cbexpl' --learning_rate 0.001 --sched_step 125000 --sched_gamma 0.1 --test_freq 2000 --save_freq 2000 --training_steps 250000 --net_type 'SF' --exploration_type 'Combinatorial'
-
-Train Mixed Heuristic Exploiter
-python src/main.py --train True --exploiters True --net_size 100 --test_nets_dir 'data/networks/generated/SF_100n_2.422deg_NetworkCascEnv_p0.02_allCasc_10nets' --p 0.02 --degree 2 --exp_name 'garbage_test' --learning_rate 0.001 --sched_step 100000 --sched_gamma 0.1 --test_freq 5000 --save_freq 5000 --training_steps 200000 --net_type 'SF' --cascade_type threshold --eps_fin 1.0 --fin_expl 1 --cfa True --exploited_type 'RTMixed'
-
-
 Tensorboard Regex
 ^((?!\/).)*$
 
 ----------------------------------------------------------------------------------------------------------
 Supervised Learning
-python src/create_SL_data_set.py --train True --net_size  --num_topologies 20000 --num_trials 100 --exploration_type CDME
+python src/create_subact_dataset.py --ego_graph_size 32 --num_subact_targets 100 --num_subact_sets 1 --num_trials_sub 59964 --max_valset_trials 10000 --load_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --exploration_type 'Random'
 
-python src/create_subact_dataset.py --ego_graph_size 1000 --num_subact_targets 1000 --num_subact_sets 1 --num_trials_sub 59964 --max_valset_trials 10000 --load_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --exploration_type 'Random'
+python src/create_subact_dataset.py --ego_graph_size 1000 --num_subact_targets 5 --num_subact_sets 1600 --num_trials_sub 100 --max_valset_trials 10000 --load_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --exploration_type 'Random' --cfda True
 
-python src/create_subact_dataset.py --ego_graph_size 100 --num_subact_targets 5 --num_subact_sets 500 --num_trials_sub 100 --load_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --cfda True
+python src/create_subact_dataset.py --ego_graph_size 25 --num_subact_targets 5 --num_subact_sets 80 --num_trials_sub 100 --load_dir data/Ego/25C2/ego_NashEQ/ --overwrite True
 
-python src/create_subact_dataset.py --ego_graph_size 25 --num_subact_targets 5 --num_subact_sets 80 --num_trials_sub 100 --load_dir data/Ego/25C2/ego_NashEQ/ --cascade_type 'shortPath' --overwrite 'True' --calc_nash_ego True
-
+--load_dir data/Ego/25C2/ego_NashEQ/ --cascade_type 'threshold' --cfda True --overwrite True
 
 python src/create_SL_data_set.py --train True --exploration_type 'CDME' --net_size 5 --load_dir data/5C2/validation_data/1topo_NashEQ/ --num_trials 100 --num_topologies 1
 
@@ -83,9 +18,11 @@ python src/generate_networks.py --net_save_dir './data/5C2/validation_data/topol
 python src/SL_validate.py  --data_dir './data/5C2/validation_data/2topo_NashEQ/' --q_model_path './models/SL/5C2/garbage_test/best_div.pt' --net_size 5 --mlp_hidden_size 128
 
 subact training
-python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl_CfDA/ --exp_name '25_5C2_shortPath1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 50 --batch_size 128 --mlp_hidden_size 64 --embed_size 64 --cascade_type 'shortPath'
+python src/subact_train.py --ego_data_dir data/Ego/10C2/ego_NashEQ/ --subact_data_dir data/Ego/10C2/ego_NashEQ/32sets_5targets_100trials_RandomCycleExpl/ --exp_name '10_5C2_shortpath1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 50 --batch_size 64 --mlp_hidden_size 64 --embed_size 64  --cascade_type 'shortPath'
 
-python src/subact_train.py --ego_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/1sets_100targets_47617trials_RandomCycleExpl/ --exp_name '100_100C2_1sets_noheuristic1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 128 --mlp_hidden_size 128 --embed_size 64
+python src/subact_train.py --ego_data_dir data/Ego/25C2/ego_NashEQ/ --subact_data_dir data/Ego/25C2/ego_NashEQ/80sets_5targets_100trials_RandomCycleExpl/ --exp_name '25_5C2_shortpath2' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 50 --batch_size 64 --mlp_hidden_size 64 --embed_size 64  --cascade_type 'shortPath'
+
+python src/subact_train.py --ego_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/80sets_5targets_100trials_RandomCycleExpl_CfDA/ --exp_name '100_5C2_80sets1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 128 --mlp_hidden_size 64 --embed_size 64
 
 python src/subact_train.py --ego_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/500sets_5targets_100trials_RandomCycleExpl_CfDA/ --exp_name '100_5C2_CFDA1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 128 --mlp_hidden_size 64 --embed_size 128
 
@@ -96,13 +33,13 @@ cuda 1 training
 python src/subact_train.py --ego_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/200sets_8targets_784trials_RandomCycleExpl/ --exp_name '1000_7C2_1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 256 --mlp_hidden_size 64 --embed_size 64 --device cuda:1
 
 Exploiters
-python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/25_25C2/25_25C2_nofeat1/' --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --ego_exp_name '25_25C2_nofeat1' --net_size 25 --exp_name '25_25C2_exploiters1'
+python src/train_RL_exploiters.py --training_steps 500 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/25_25C2/25_25C2_nofeat1' --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --ego_exp_name '25_25C2_nofeat1' --net_size 25 --exp_name '25_25C2_EGexploiters1' --exploration_type 'EpsGreedy'
 
 python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/100_100C2/100_100C2_1sets_noheuristic1' --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_exp_name '100_100C2_1sets_noheuristic1' --net_size 100 --exp_name '100_100C2_exploiters1' 
 
 python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/1000_5C2/1000_5C2_test/' --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_exp_name '1000_5C2_test' --net_size 1000 --exp_name '1000C2_exploiters_test'
 
 
-python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --exp_name '25_RTMixed1' --exploited_type RTMixed --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist'
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --exp_name '25_RTMixed_EG' --exploited_type RTMixed --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --exploration_type 'EpsGreedy'
 
 python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 100 --exp_name '100_RTMixed2' --exploited_type RTMixed --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --device 'cuda:0'

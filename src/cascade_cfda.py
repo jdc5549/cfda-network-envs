@@ -4,6 +4,12 @@ from scm import SCM
 import numpy as np
 import random
 import matplotlib.pyplot as plt
+from utils import ncr
+import itertools
+import time
+
+from tqdm import tqdm
+
 
 class Counterfactual_Cascade_Fns():
 	def __init__(self,env):
@@ -150,7 +156,6 @@ class Counterfactual_Cascade_Fns():
 				exit()
 		return indep_sets
 
-
 	def gen_cfacs(self,trial_data,trial_info):
 		fail_components = []
 		cfac_trial_data = []
@@ -259,9 +264,97 @@ class Counterfactual_Cascade_Fns():
 					cfac_trial_info.append(info)
 
 		return cfac_trial_data, cfac_trial_info
+	
+	def _process_cfac(self,args,combs):
 
-	def gen_cross_subset_cfacs(self,trial_data,trial_info,fac_keys,all_comb_acts):
+		failed_inits = set()
+		cfac_keys = {}
+		trial_data,trial_info,fac_keys,all_comb_acts,max_comb_data = args
+		# shared_cfac_trial_data,shared_cfac_trial_info,
+		cfac_trial_data = []
+		cfac_trial_info = []
+		for comb in combs:
+			comb_data_count = 0
+			max_data_reached = False
+			i,fcs_subset_i = comb[0]
+			p,fcs_subset_p = comb[1]
+			for j,fcj in enumerate(fcs_subset_i):
+				if max_data_reached:
+					break
+				act_j = trial_data[i][j][:-1]
+				for k,fck in enumerate(fcs_subset_p):
+					if max_data_reached:
+						break
+					act_k = trial_data[p][k][:-1]
+					num_inits = len(fcj.keys()) + len(fck.keys()) - 2   #sum([1 for n in cc1 if n in init_fail_new or n in self.init_fails[i]])
+					if num_inits > len(act_k):
+						continue
+					init1 = list(fcj.keys())
+					init2 = list(fck.keys())
+					key1 = len(all_comb_acts)*init1[0] if len(init1) > 0 else 0
+					key2 = init2[0] if len(init2) > 0 else 0
+					init_key = key1 + key2
+					if init_key in failed_inits:
+						continue
+					else:
+						indep_sets = self.check_failure_independence(fcj,fck)
+						if len(indep_sets) == 0:
+							failed_inits.add(init_key)
+					for idp in indep_sets:
+						cfac_atk_action = idp.copy()
+						all_def_actions = list(act_j[2:]) + list(act_k[2:])
+						all_def_actions = list(map(int,all_def_actions))
+						random.shuffle(all_def_actions)
+						cfac_def_action = []
+						second_gen = False
+						for d in all_def_actions:
+							if d not in cfac_def_action and d not in cfac_atk_action:
+								cfac_def_action.append(d)
+							if len(cfac_def_action) >= len(list(act_j[2:])):
+								break
+						if len(cfac_def_action) < len(list(act_j[2:])):
+							second_gen = True
+							d = np.random.choice([a for a in range(self.env.scm.G.number_of_nodes()) if a not in cfac_atk_action and a not in cfac_def_action])
+							cfac_def_action.append(d)
+						cfac_atk_action.sort()
+						cfac_def_action.sort()
+						cfac_action = [tuple(cfac_atk_action),tuple(cfac_def_action)]
+
+						cfac_init_fail = cfac_atk_action #[n for n in cfac_atk_action if n not in cfac_def_action]
+						if cfac_init_fail == trial_info[i][j]['init_fail'] or cfac_init_fail == trial_info[p][k]['init_fail']:
+								continue
+
+						#skip any cfac actions that already exist in the factual data
+						key = len(all_comb_acts)*all_comb_acts.index(cfac_action[0]) + all_comb_acts.index(cfac_action[1])
+						if key in fac_keys or key in cfac_keys: 
+							continue
+						else:
+							cfac_keys[key] = len(cfac_trial_data) #corresponding index in cfac_trial_data after it is added
+
+						for f in idp:
+							if f in fcj.keys():
+								def_1 = f
+							if f in fck.keys():
+								def_2 = f
+						counterfac_casc_fail = list(set(fcj[def_1] + fck[def_2]))
+
+						r = len(counterfac_casc_fail)/self.env.scm.G.number_of_nodes()
+						# if r == 0 and len(counterfac_casc_fail) > 0:
+						trial_list = [a for act in cfac_action for a in act]
+						trial_list.append(r)
+						trial_result = np.asarray(trial_list)
+						cfac_trial_data.append(trial_result)
+						comb_data_count += 1
+						info = {'init_fail':cfac_init_fail,'fail_set':counterfac_casc_fail}
+						cfac_trial_info.append(info)
+						if comb_data_count >= max_comb_data:
+							max_data_reached = True
+		# shared_cfac_trial_data += local_cfac_trial_data
+		# shared_cfac_trial_info += local_cfac_trial_info
+		return cfac_trial_data,cfac_trial_info, cfac_keys,len(combs)
+	def gen_cross_subset_cfacs(self,trial_data,trial_info,fac_keys,all_comb_acts,max_ratio=1000):
 		num_subsets = trial_data.shape[0]
+		num_trials = trial_data.shape[1]
 		fail_components = [[] for j in range(num_subsets)]
 		for i,sub_info in enumerate(trial_info):
 			for j,info in sub_info.items():
@@ -286,120 +379,146 @@ class Counterfactual_Cascade_Fns():
 							new_failure_component[-1].append(f)
 				fail_components[i].append(new_failure_component)
 
-		cfac_trial_data = []
-		cfac_trial_info = []
-		failed_inits = set()
-		cfac_keys = set()
-		for i,fcs_subset_i in enumerate(fail_components):
-			for j,fcj in enumerate(fcs_subset_i):
-				act_j = trial_data[i][j][:-1]
-				for p,fcs_subset_p in enumerate(fail_components[i+1:]):
-					for k,fck in enumerate(fcs_subset_p):
-						act_k = trial_data[p][k][:-1]
-						num_inits = len(fcj.keys()) + len(fck.keys()) - 2   #sum([1 for n in cc1 if n in init_fail_new or n in self.init_fails[i]])
-						if num_inits > len(act_k):
-							continue
-						init1 = list(fcj.keys())
-						init2 = list(fck.keys())
-						key1 = len(all_comb_acts)*init1[0] if len(init1) > 0 else 0
-						key2 = init2[0] if len(init2) > 0 else 0
-						init_key = key1 + key2
-						if init_key in failed_inits:
-							continue
-						else:
-							indep_sets = self.check_failure_independence(fcj,fck)
-							if len(indep_sets) == 0:
-								failed_inits.add(init_key)
-						for idp in indep_sets:
-							cfac_atk_action = idp.copy()
-							all_def_actions = list(act_j[2:]) + list(act_k[2:])
-							all_def_actions = list(map(int,all_def_actions))
-							random.shuffle(all_def_actions)
-							cfac_def_action = []
-							second_gen = False
-							for d in all_def_actions:
-								if d not in cfac_def_action and d not in cfac_atk_action:
-									cfac_def_action.append(d)
-								if len(cfac_def_action) >= len(list(act_j[2:])):
-									break
-							if len(cfac_def_action) < len(list(act_j[2:])):
-								second_gen = True
-								d = np.random.choice([a for a in range(self.env.scm.G.number_of_nodes()) if a not in cfac_atk_action and a not in cfac_def_action])
-								cfac_def_action.append(d)
-							cfac_atk_action.sort()
-							cfac_def_action.sort()
-							cfac_action = [tuple(cfac_atk_action),tuple(cfac_def_action)]
+		from multiprocessing import Pool,Lock, Manager,cpu_count
+		from functools import partial
+		manager = Manager()
+		cfac_trial_data = manager.list()
+		cfac_trial_info = manager.list()
+		cfac_keys = manager.dict()
+		# for i,fcs_subset_i in enumerate(fail_components):
+		# 	for p,fcs_subset_p in enumerate(fail_components[i+1:]):
+		num_combs = ncr(len(fail_components),2)
+		subset_combinations = list(itertools.combinations(enumerate(fail_components), 2))
+		data_per_combo = max_ratio*num_subsets*num_trials/len(subset_combinations)
+		#num_chunks = max(cpu_count()-2, len(subset_combinations)//500)
+		num_chunks = cpu_count()-2
+		max_chunk_size = 1000
+		chunk_size = min([len(subset_combinations) // num_chunks,max_chunk_size])
+		chunks = [subset_combinations[i:i+chunk_size] for i in range(0, len(subset_combinations), chunk_size)]
+		lock = Lock()
+		tic = time.perf_counter()
+		with Pool(processes=num_chunks) as pool, tqdm(total=num_combs, desc='CFac Data Progress') as cfac_pbar:
+			args = (trial_data,trial_info,fac_keys,all_comb_acts,data_per_combo)
+			for (chunk_trial_data, chunk_trial_info,chunk_cfac_keys,chunk_len) in pool.imap_unordered(partial(self._process_cfac, args), chunks):
+				kept_idxs = []
+				for key in chunk_cfac_keys:
+					with lock:
+						if key not in cfac_keys:
+							cfac_keys[key] = chunk_cfac_keys[key]
+							kept_idxs.append(chunk_cfac_keys[key])
+				cfac_trial_data.extend([chunk_trial_data[i] for i in kept_idxs])
+				cfac_trial_info.extend([chunk_trial_info[i] for i in kept_idxs])
+				cfac_pbar.update(chunk_len)
+		toc = time.perf_counter()
+		cfac_time = toc-tic
+		print('copying to regular data structures')
+		cfac_trial_data = np.array(cfac_trial_data)
+		cfac_trial_info = list(cfac_trial_info)
+		cfac_keys = dict(cfac_keys)
+		print('finished')
 
-							#skip any cfac actions that already exist in the factual data
-							key = len(all_comb_acts)*all_comb_acts.index(cfac_action[0]) + all_comb_acts.index(cfac_action[1])
-							# except:
-							# 	print(all_def_actions)
-							# 	print(cfac_atk_action)
-							# 	print(cfac_def_action)
-							# 	print(second_gen)
-							# 	exit()
-							if key in fac_keys or key in cfac_keys: 
-								continue
-							else:
-								cfac_keys.add(key)
+		# cfac_trial_data = []
+		# cfac_trial_info = []
+		# failed_inits = set()
+		# cfac_keys = set()
+		# cfac_pbar = tqdm(total=num_combs,desc='Cfac Gen Progress')
+		# for comb in subset_combinations:
+		# 	i,fcs_subset_i = comb[0]
+		# 	p,fcs_subset_p = comb[1]
+		# 	cfac_pbar.update()
+		# 	for j,fcj in enumerate(fcs_subset_i):
+		# 		act_j = trial_data[i][j][:-1]
+		# 		for k,fck in enumerate(fcs_subset_p):
+		# 			act_k = trial_data[p][k][:-1]
+		# 			num_inits = len(fcj.keys()) + len(fck.keys()) - 2   #sum([1 for n in cc1 if n in init_fail_new or n in self.init_fails[i]])
+		# 			if num_inits > len(act_k):
+		# 				continue
+		# 			init1 = list(fcj.keys())
+		# 			init2 = list(fck.keys())
+		# 			key1 = len(all_comb_acts)*init1[0] if len(init1) > 0 else 0
+		# 			key2 = init2[0] if len(init2) > 0 else 0
+		# 			init_key = key1 + key2
+		# 			if init_key in failed_inits:
+		# 				continue
+		# 			else:
+		# 				indep_sets = self.check_failure_independence(fcj,fck)
+		# 				if len(indep_sets) == 0:
+		# 					failed_inits.add(init_key)
+		# 			for idp in indep_sets:
+		# 				cfac_atk_action = idp.copy()
+		# 				all_def_actions = list(act_j[2:]) + list(act_k[2:])
+		# 				all_def_actions = list(map(int,all_def_actions))
+		# 				random.shuffle(all_def_actions)
+		# 				cfac_def_action = []
+		# 				second_gen = False
+		# 				for d in all_def_actions:
+		# 					if d not in cfac_def_action and d not in cfac_atk_action:
+		# 						cfac_def_action.append(d)
+		# 					if len(cfac_def_action) >= len(list(act_j[2:])):
+		# 						break
+		# 				if len(cfac_def_action) < len(list(act_j[2:])):
+		# 					second_gen = True
+		# 					d = np.random.choice([a for a in range(self.env.scm.G.number_of_nodes()) if a not in cfac_atk_action and a not in cfac_def_action])
+		# 					cfac_def_action.append(d)
+		# 				cfac_atk_action.sort()
+		# 				cfac_def_action.sort()
+		# 				cfac_action = [tuple(cfac_atk_action),tuple(cfac_def_action)]
 
-							cfac_init_fail = cfac_atk_action #[n for n in cfac_atk_action if n not in cfac_def_action]
-							for f in idp:
-								if f in fcj.keys():
-									def_1 = f
-								if f in fck.keys():
-									def_2 = f
-							#TODO: Account for case where init fail from one component is a cascaded fail in the other
-							# def_1 = cc1 if any(n in cc1 for n in cfac_init_fail) else []
-							# def_2 = cc2 if any(n in cc2 for n in cfac_init_fail) else []
-							counterfac_casc_fail = fcj[def_1] + fck[def_2]
-							#fac_cfac_casc_fail = self.env.scm.check_cascading_failure(cfac_init_fail)
-							#self.env.scm.reset()
-							#Check that cfac is valid
-							# if set(fac_cfac_casc_fail) != set(counterfac_casc_fail):
-							# 	print('action1: ', act_j)
-							# 	print('action2: ', act_k)
-							# 	print('init1: ',trial_info[j]['init_fail'])
-							# 	print('init2: ', trial_info[k]['init_fail'])
-							# 	print(f'orig_failset1: ', trial_info[j]['fail_set'])
-							# 	print('orig_failset2: ', trial_info[k]['fail_set'])
-							# 	print('cfac_init: ', cfac_init_fail)
-							# 	print('comp1: ', fcj)
-							# 	print('comp2: ', fck)
-							# 	if self.cfa_cascade_fns.casc_type == 'shortPath':
-							# 		print('Factual Fail Set 1: ', self.env.scm.check_cascading_failure(trial_info[j]['init_fail']))
-							# 		self.env.scm.reset()
-							# 		print('Factual Fail Set 2: ', self.env.scm.check_cascading_failure(trial_info[k]['init_fail']))
-							# 		self.env.scm.reset()
-							# 	print('cfac_actions: ',cfac_action)
-							# 	print('cfac_init_fail: ', cfac_init_fail)
-							# 	print('def_1: ', def_1)
-							# 	print('def_2: ', def_2)
-							# 	print('counterfac_casc_fail: ', counterfac_casc_fail)
-							# 	print('fac_cfac_casc_fail: ',fac_cfac_casc_fail)
-							# 	exit()
-							if cfac_init_fail == trial_info[i][j]['init_fail'] or cfac_init_fail == trial_info[p][k]['init_fail']:
-									continue
-							r = len(counterfac_casc_fail)/self.env.scm.G.number_of_nodes()
-							if r == 0 and len(counterfac_casc_fail) > 0:
-								print('Reward: ',r)
-								print('Num node: ',self.env.scm.G.number_of_nodes())
-								print('Old init: ', init_fails[i])
-								print('New init: ',init_fail_new)
-								print('CC1: ', cc1)
-								print('CC2: ',cc2)
-								print("Cfac Casc: ", counterfac_casc_fail)
-								print('Cfac Init:',fcac_init_fail)
-								exit()	
-							trial_list = [a for act in cfac_action for a in act]
-							trial_list.append(r)
-							trial_result = np.asarray(trial_list)
-							cfac_trial_data.append(trial_result)
-							info = {'init_fail':cfac_init_fail,'fail_set':counterfac_casc_fail}
-							cfac_trial_info.append(info)
+		# 				#skip any cfac actions that already exist in the factual data
+		# 				key = len(all_comb_acts)*all_comb_acts.index(cfac_action[0]) + all_comb_acts.index(cfac_action[1])
+		# 				if key in fac_keys or key in cfac_keys: 
+		# 					continue
+		# 				else:
+		# 					cfac_keys.add(key)
 
+		# 				cfac_init_fail = cfac_atk_action #[n for n in cfac_atk_action if n not in cfac_def_action]
+		# 				for f in idp:
+		# 					if f in fcj.keys():
+		# 						def_1 = f
+		# 					if f in fck.keys():
+		# 						def_2 = f
+		# 				#TODO: Account for case where init fail from one component is a cascaded fail in the other
+		# 				# def_1 = cc1 if any(n in cc1 for n in cfac_init_fail) else []
+		# 				# def_2 = cc2 if any(n in cc2 for n in cfac_init_fail) else []
+		# 				counterfac_casc_fail = list(set(fcj[def_1] + fck[def_2]))
+		# 				#fac_cfac_casc_fail = self.env.scm.check_cascading_failure(cfac_init_fail)
+		# 				#self.env.scm.reset()
+		# 				#Check that cfac is valid
+		# 				# if set(fac_cfac_casc_fail) != set(counterfac_casc_fail):
+		# 				# 	print('action1: ', act_j)
+		# 				# 	print('action2: ', act_k)
+		# 				# 	print('init1: ',trial_info[j]['init_fail'])
+		# 				# 	print('init2: ', trial_info[k]['init_fail'])
+		# 				# 	print(f'orig_failset1: ', trial_info[j]['fail_set'])
+		# 				# 	print('orig_failset2: ', trial_info[k]['fail_set'])
+		# 				# 	print('cfac_init: ', cfac_init_fail)
+		# 				# 	print('comp1: ', fcj)
+		# 				# 	print('comp2: ', fck)
+		# 				# 	if self.cfa_cascade_fns.casc_type == 'shortPath':
+		# 				# 		print('Factual Fail Set 1: ', self.env.scm.check_cascading_failure(trial_info[j]['init_fail']))
+		# 				# 		self.env.scm.reset()
+		# 				# 		print('Factual Fail Set 2: ', self.env.scm.check_cascading_failure(trial_info[k]['init_fail']))
+		# 				# 		self.env.scm.reset()
+		# 				# 	print('cfac_actions: ',cfac_action)
+		# 				# 	print('cfac_init_fail: ', cfac_init_fail)
+		# 				# 	print('def_1: ', def_1)
+		# 				# 	print('def_2: ', def_2)
+		# 				# 	print('counterfac_casc_fail: ', counterfac_casc_fail)
+		# 				# 	print('fac_cfac_casc_fail: ',fac_cfac_casc_fail)
+		# 				# 	exit()
+		# 				if cfac_init_fail == trial_info[i][j]['init_fail'] or cfac_init_fail == trial_info[p][k]['init_fail']:
+		# 						continue
+		# 				r = len(counterfac_casc_fail)/self.env.scm.G.number_of_nodes()
+		# 				# if r == 0 and len(counterfac_casc_fail) > 0:
+		# 				trial_list = [a for act in cfac_action for a in act]
+		# 				trial_list.append(r)
+		# 				trial_result = np.asarray(trial_list)
+		# 				cfac_trial_data.append(trial_result)
+		# 				info = {'init_fail':cfac_init_fail,'fail_set':counterfac_casc_fail}
+		# 				cfac_trial_info.append(info)
+		# cfac_pbar.close()
 		cfac_trial_data = np.stack(cfac_trial_data) if len(cfac_trial_data) > 0 else []
-		return cfac_trial_data, cfac_trial_info
+		return cfac_trial_data, cfac_trial_info,cfac_time
 
 if __name__ == '__main__':
 	import argparse
