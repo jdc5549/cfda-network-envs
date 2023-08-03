@@ -28,7 +28,6 @@ class Validator():
 		#self.train_set = self.get_validation_set(subact_sets)
 		# if os.path.isdir(nash_eqs_dir):
 		#Get Nash EQs
-
 		if nash_eqs_dir is not None and os.path.isdir(nash_eqs_dir):
 			fns = [f for f in os.listdir(nash_eqs_dir)]
 			fns.sort()

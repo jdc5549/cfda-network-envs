@@ -63,25 +63,28 @@ class NetCascDataset_Subact(Dataset):
 
         num_processes = mp.cpu_count()-2
         chunk_size = len(self.action_data) // num_processes
+        #rem = len(self.action_data) % chunk_size
 
         with mp.Pool(processes=num_processes) as pool:
-            mp_array = mp.Array('i', self.action_data.shape[0]*2)
-            result_comb_action_idxs = np.frombuffer(mp_array.get_obj(),c.c_int)
-            result_comb_action_idxs = np.reshape(result_comb_action_idxs,(self.action_data.shape[0],2))
-            args = [(i*chunk_size, (i+1)*chunk_size, self.action_data, all_actions, result_comb_action_idxs)
-                    for i in range(num_processes)]
-            pool.starmap(self.process_chunk, args)
+            # mp_array = mp.Array('i', self.action_data.shape[0]*2)
+            # result_comb_action_idxs = np.frombuffer(mp_array.get_obj(),c.c_int)
+            # result_comb_action_idxs = np.reshape(result_comb_action_idxs,(self.action_data.shape[0],2))
+            args = [(i*chunk_size, min((i+1)*chunk_size,len(self.action_data)), self.action_data, all_actions,chunk_size)
+                    for i in range((len(self.action_data)+chunk_size -1)//chunk_size)]
+            result_comb_action_idxs = np.vstack([result for result in pool.starmap(self.process_chunk, args)])
+
             # Convert the shared array to a torch tensor
-            self.comb_action_idxs = torch.tensor(result_comb_action_idxs, dtype=torch.long).view(-1, 2)
-        # self.comb_action_idxs = torch.zeros((self.action_data.shape[0],2),dtype=torch.long)
-        # for i,a in enumerate(self.action_data):
-        #     atk_act = tuple(a[:2])
-        #     comb_idx = all_actions.index(atk_act)
-        #     self.comb_action_idxs[i,0] = comb_idx
-        #     def_act = tuple(a[2:])
-        #     comb_idx = all_actions.index(def_act)
-        #     self.comb_action_idxs[i,1] = comb_idx
+            self.comb_action_idxs_mp = torch.tensor(result_comb_action_idxs, dtype=torch.long).view(-1, 2)
+        self.comb_action_idxs_sp = torch.zeros((self.action_data.shape[0],2),dtype=torch.long)
+        for i,a in enumerate(self.action_data):
+            atk_act = tuple(a[:2])
+            comb_idx = all_actions.index(atk_act)
+            self.comb_action_idxs_sp[i,0] = comb_idx
+            def_act = tuple(a[2:])
+            comb_idx = all_actions.index(def_act)
+            self.comb_action_idxs_sp[i,1] = comb_idx
         self.failset_onehot_data = torch.zeros((casc_data.shape[0],self.thresholds.shape[0]))
+        self.comb_action_idxs = self.comb_action_idxs_mp
         if not val:
             info_fn = subact_data_dir + f"subact_{casc_type}casc_trialinfo.pkl"
             with open(info_fn,'rb') as f:
@@ -146,10 +149,15 @@ class NetCascDataset_Subact(Dataset):
             #self.feat_topo = feat_t
             #self.feat_topo_data = torch.permute(self.feat_topo_data,(0,2,1))      
 
-    def process_chunk(self,start, end, action_data, all_actions, result_comb_action_idxs):
+    def process_chunk(self,start, end, action_data, all_actions,chunk_size):
+        # if end <= action_data.shape[0]:
+        #     result_comb_action_idxs = np.zeros((chunk_size,2))
+        # else:
+        result_comb_action_idxs = np.zeros((end-start,2))
+
         if start == 0:
-            for i in tqdm(range(start, end), desc="First Chunk Progress", leave=False):
-                a = action_data[i]
+            for i in tqdm(range(len(result_comb_action_idxs)), desc="First Chunk Progress", leave=False):
+                a = action_data[i+start]
                 atk_act = tuple(a[:2])
                 comb_idx = all_actions.index(atk_act)
                 result_comb_action_idxs[i, 0] = comb_idx
@@ -157,15 +165,15 @@ class NetCascDataset_Subact(Dataset):
                 comb_idx = all_actions.index(def_act)
                 result_comb_action_idxs[i, 1] = comb_idx                
         else:
-            for i in range(start, end):
-                a = action_data[i]
+            for i in range(len(result_comb_action_idxs)):
+                a = action_data[i+start]
                 atk_act = tuple(a[:2])
                 comb_idx = all_actions.index(atk_act)
                 result_comb_action_idxs[i, 0] = comb_idx
                 def_act = tuple(a[2:])
                 comb_idx = all_actions.index(def_act)
                 result_comb_action_idxs[i, 1] = comb_idx
-
+        return result_comb_action_idxs
     def __len__(self):
         # Return the total number of samples in your dataset
         return self.reward_data.size

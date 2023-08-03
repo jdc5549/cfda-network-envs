@@ -105,7 +105,7 @@ def _gen_utils_eqs(fn_c_dir_nn):
     f_util = save_dir + f'util.npy'
     np.save(f_util,U)
 
-def perform_training_trials(args,topo_fn,target_set):
+def perform_training_trials(args,topo_fn,past_keys,target_set):
     from SL_exploration import SLExploration, RandomExploration, CDMExploration,RandomCycleExploration
     if args.exploration_type == 'Random':
         exploration = RandomExploration(target_set)
@@ -123,6 +123,7 @@ def perform_training_trials(args,topo_fn,target_set):
     trial_info = {}
     exploration.reset()
     env = NetworkCascEnv(net_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
+    env.scm.past_results = past_keys
     for j in range(num_trials):
         action = exploration()
         exploration.update()
@@ -133,7 +134,7 @@ def perform_training_trials(args,topo_fn,target_set):
     # np.save(data_dir + f'{args.cascade_type}casc_trialdata.npy',trial_data)
     # with open(data_dir + f'{args.cascade_type}casc_trialinfo.pkl','wb') as file:
     #     pickle.dump(trial_info,file)
-    return trial_data,trial_info
+    return trial_data,trial_info,env.scm.past_results
 
 def perform_val_trials(args,topo_fn,train_actions):
     net_size = args.ego_graph_size
@@ -179,9 +180,9 @@ def subset_selection(method):
 #     trial_data, trial_info = perform_training_trials(args, topo_fn, sa)
 #     return trial_data, trial_info
 
-def process_subact_set(args, topo_fn, sa):
-    trial_data, trial_info = perform_training_trials(args, topo_fn, sa)
-    return trial_data, trial_info
+# def process_subact_set(args, topo_fn, past_keys, sa):
+#     trial_data, trial_info = perform_training_trials(args, topo_fn, past_keys, sa)
+#     return trial_data, trial_info
 
 def update_progress(pbar):
     pbar.update()
@@ -196,9 +197,8 @@ def create_dataset(args):
         gen_threshes = False
 
     #generate data for the ego graph
-
-    if args.load_dir is not None:
-        data_dir = args.load_dir
+    if args.load_graph_dir is not None:
+        data_dir = args.load_graph_dir
     else:
         eval_method = ''
         if args.calc_nash_ego:
@@ -228,21 +228,23 @@ def create_dataset(args):
         f_args = (os.path.join(data_dir,fn),args.cascade_type,nash_eq_dir,args.ego_graph_size)
         _gen_utils_eqs(f_args)
 
-    #generate action subsets #TODO:make a method that selects nodes for the subset propto degree
-    nodes = [i for i in range(args.ego_graph_size)]
-    subact_sets = []
-    for i in range(args.num_subact_sets):
-        subset = np.sort(random.sample(nodes,args.num_subact_targets))
-        while any(np.array_equal(subset,arr) for arr in subact_sets):
-            subset = np.sort(random.sample(nodes,args.num_subact_targets))
-        subact_sets.append(subset)
-
+    #generate action subsets
     eval_method = f'{args.num_trials_sub}trials_{args.exploration_type}Expl'
     save_dir = data_dir + f'{args.num_subact_sets}sets_{args.num_subact_targets}targets_{eval_method}'
     save_dir += '_CfDA/' if args.cfda else '/'
     if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)   
-    np.save(save_dir + 'subact_sets.npy',np.stack(subact_sets))
+        os.makedirs(save_dir)
+    if not args.overwrite:
+        subact_sets = np.load(save_dir + 'subact_sets.npy')
+    else:
+        nodes = [i for i in range(args.ego_graph_size)]
+        subact_sets = []
+        for i in range(args.num_subact_sets):
+            subset = np.sort(random.sample(nodes,args.num_subact_targets))
+            while any(np.array_equal(subset,arr) for arr in subact_sets):
+                subset = np.sort(random.sample(nodes,args.num_subact_targets))
+            subact_sets.append(subset)
+        np.save(save_dir + 'subact_sets.npy',np.stack(subact_sets))
 
     fac_start = time.perf_counter()
 
@@ -257,64 +259,89 @@ def create_dataset(args):
     #         casc_info.append(info)
     #     fac_data_pbar.update()
     # fac_data_pbar.close()
-
-    from multiprocessing import Pool,Manager,cpu_count
-    manager = Manager()
-    shared_allsets_trialdata = manager.list(np.zeros((args.num_subact_sets, args.num_trials_sub, 5)))
-    shared_allsets_trialinfo = manager.list([[] for _ in range(args.num_subact_sets)])
-    shared_casc_info = manager.list()
-    # num_chunks = cpu_count()-2
-    # chunk_size = len(subset_combinations) // num_chunks
-    # chunks = [subset_combinations[i:i+chunk_size] for i in range(0, len(subset_combinations), chunk_size)]
-    from functools import partial
-    with Pool(processes=cpu_count()-2) as pool, tqdm(total=len(subact_sets), desc='Fac Data Progress') as pbar:
-        for i, (trial_data, trial_info) in enumerate(pool.imap_unordered(partial(process_subact_set, args, topo_fn), subact_sets)):
-            shared_allsets_trialdata[i] = trial_data
-            shared_allsets_trialinfo[i] = trial_info
-            for key, info in trial_info.items():
-                try:
-                    shared_casc_info.append(info)
-                except:
-                    print(info)
-            update_progress(pbar)
-
-    allsets_trialdata = np.array(shared_allsets_trialdata)
-    allsets_trialinfo = list(shared_allsets_trialinfo)
-    casc_info = list(shared_casc_info)  
-
-    casc_keys = set()
     from utils import get_combinatorial_actions
-    casc_data = allsets_trialdata.reshape((-1,allsets_trialdata.shape[-1]))
     all_actions = get_combinatorial_actions(args.ego_graph_size,2)
-    duplicate_bool = []
+    subact_save_name = save_dir + f'subact_{args.cascade_type}casc'
+    if not args.overwrite and os.path.exists(f'{subact_save_name}_splitbyset_trialdata.npy') and os.path.exists(f'{subact_save_name}_splitbyset_trialinfo.pkl'):
+        allsets_trialdata = np.load(f'{subact_save_name}_splitbyset_trialdata.npy')
+        with open(f'{subact_save_name}_splitbyset_trialinfo.pkl','rb') as file:
+            allsets_trialinfo = pickle.load(file)
+        casc_data = np.load(f'{subact_save_name}_trialdata.npy')
+        with open(f'{subact_save_name}_trialinfo.pkl','rb') as file:
+            casc_info = pickle.load(file)
+        with open(f'{subact_save_name}_keys.pkl','rb') as file:
+            casc_keys = pickle.load(file)
+        fac_data_time = None
+    else:
+        from multiprocessing import Pool,Manager,cpu_count
+        manager = Manager()
+        shared_allsets_trialdata = manager.list(np.zeros((args.num_subact_sets, args.num_trials_sub, 5)))
+        shared_allsets_trialinfo = manager.list([[] for _ in range(args.num_subact_sets)])
+        all_pastkeys = manager.dict()
+        shared_casc_info = manager.list()
+        # num_chunks = cpu_count()-2
+        # chunk_size = len(subset_combinations) // num_chunks
+        # chunks = [subset_combinations[i:i+chunk_size] for i in range(0, len(subset_combinations), chunk_size)]
+        from functools import partial
+        with Pool(processes=cpu_count()-1) as pool, tqdm(total=len(subact_sets), desc='Fac Data Progress') as pbar:
+            for i, (trial_data, trial_info,trial_keys) in enumerate(pool.imap_unordered(partial(perform_training_trials, args, topo_fn,dict(all_pastkeys)), subact_sets)):
+                shared_allsets_trialdata[i] = trial_data
+                shared_allsets_trialinfo[i] = trial_info
+                for key, info in trial_info.items():
+                    try:
+                        shared_casc_info.append(info)
+                    except:
+                        print(info)
+                for key,value in trial_keys.items():
+                    if key not in all_pastkeys:
+                        all_pastkeys[key] = value
+                pbar.set_postfix({'num_pastkeys': len(all_pastkeys.keys())})
+                update_progress(pbar)
 
-    duplicate_bool = []  # Initialize the list outside the loop
-    with tqdm(total=len(casc_data), desc='Filtering duplicates in fac data', unit='iteration') as pbar:
-        for i,c in enumerate(casc_data):
-            c_tup = tuple(c.astype(int))
-            key = len(all_actions) * all_actions.index((min(c_tup[:2]), max(c_tup[:2]))) + all_actions.index((min(c_tup[2:4]), max(c_tup[2:4])))
-            if key not in casc_keys:
-                casc_keys.add(key)
-                duplicate_bool.append(False)
-            else:
-                duplicate_bool.append(True)
-            pbar.update(1)  # Update the progress bar with each iteration
-    # for i,c in enumerate(casc_data):
-    #     c_tup = tuple(c.astype(int))
-    #     key = len(all_actions)*all_actions.index((min(c_tup[:2]),max(c_tup[:2]))) + all_actions.index((min(c_tup[2:4]),max(c_tup[2:4])))
-    #     if key not in casc_keys:
-    #         casc_keys.add(key)
-    #         duplicate_bool.append(False)
-    #     else:
-    #         duplicate_bool.append(True)
+        allsets_trialdata = np.array(shared_allsets_trialdata)
+        allsets_trialinfo = list(shared_allsets_trialinfo)
+        np.save(save_dir + f'subact_{args.cascade_type}casc_splitbyset_trialdata.npy',allsets_trialdata)
+        with open(save_dir + f'subact_{args.cascade_type}casc_splitbyset_trialinfo.pkl','wb') as file:
+            pickle.dump(allsets_trialinfo,file)
 
-    casc_data = casc_data[~np.array(duplicate_bool)]
-    casc_info = [casc_info[i] for i,dup in enumerate(duplicate_bool) if not dup]
-    #     else:
-    #         casc_data = np.concatenate((casc_data[:i],casc_data[i+1:]))
-    #         casc_info = casc_info[:i] + casc_info[i+1:]
-    fac_end = time.perf_counter()
-    fac_data_time = fac_end-fac_start
+        casc_info = list(shared_casc_info)  
+        casc_keys = set()
+        casc_data = allsets_trialdata.reshape((-1,allsets_trialdata.shape[-1]))
+        duplicate_bool = []
+
+        duplicate_bool = []  # Initialize the list outside the loop
+        with tqdm(total=len(casc_data), desc='Filtering duplicates in fac data', unit='iteration') as pbar:
+            for i,c in enumerate(casc_data):
+                c_tup = tuple(c.astype(int))
+                key = len(all_actions) * all_actions.index((min(c_tup[:2]), max(c_tup[:2]))) + all_actions.index((min(c_tup[2:4]), max(c_tup[2:4])))
+                if key not in casc_keys:
+                    casc_keys.add(key)
+                    duplicate_bool.append(False)
+                else:
+                    duplicate_bool.append(True)
+                pbar.update(1)  # Update the progress bar with each iteration
+        # for i,c in enumerate(casc_data):
+        #     c_tup = tuple(c.astype(int))
+        #     key = len(all_actions)*all_actions.index((min(c_tup[:2]),max(c_tup[:2]))) + all_actions.index((min(c_tup[2:4]),max(c_tup[2:4])))
+        #     if key not in casc_keys:
+        #         casc_keys.add(key)
+        #         duplicate_bool.append(False)
+        #     else:
+        #         duplicate_bool.append(True)
+
+        casc_data = casc_data[~np.array(duplicate_bool)]
+        casc_info = [casc_info[i] for i,dup in enumerate(duplicate_bool) if not dup]
+        #     else:
+        #         casc_data = np.concatenate((casc_data[:i],casc_data[i+1:]))
+        #         casc_info = casc_info[:i] + casc_info[i+1:]
+        fac_end = time.perf_counter()
+        fac_data_time = fac_end-fac_start
+
+        np.save(save_dir + f'subact_{args.cascade_type}casc_trialdata.npy',casc_data)
+        with open(save_dir + f'subact_{args.cascade_type}casc_trialinfo.pkl','wb') as file:
+            pickle.dump(casc_info,file)
+        with open(save_dir + f'subact_{args.cascade_type}casc_keys.pkl','wb') as file:
+            pickle.dump(casc_keys,file)
 
     cfac_trials = None
     cfac_data_time = None
@@ -324,14 +351,9 @@ def create_dataset(args):
         env = NetworkCascEnv(args.ego_graph_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
         cfac_fns = Counterfactual_Cascade_Fns(env)
         cfac_trials,cfac_info,cfac_data_time = cfac_fns.gen_cross_subset_cfacs(allsets_trialdata,allsets_trialinfo,casc_keys,all_actions,max_ratio=100)
-        print('returned from gen_cross_subset_cfacs')
         np.save(save_dir + f'subact_{args.cascade_type}casc_CFACtrialdata.npy',cfac_trials)
         with open(save_dir + f'subact_{args.cascade_type}casc_CFACtrialinfo.pkl','wb') as file:
             pickle.dump(cfac_info,file)
-
-    np.save(save_dir + f'subact_{args.cascade_type}casc_trialdata.npy',casc_data)
-    with open(save_dir + f'subact_{args.cascade_type}casc_trialinfo.pkl','wb') as file:
-        pickle.dump(casc_info,file)
 
     train_data = casc_data #casc_data.reshape((-1,5))[:]
     if args.max_valset_trials > 0:
@@ -356,7 +378,7 @@ if __name__ == '__main__':
     parser.add_argument("--cascade_type",default='threshold',type=str,help='Type of cascading model to use in cascading failure simulation.')
     parser.add_argument("--exploration_type",default='RandomCycle',type=str,help="Which exploration strategy to use to gen trials")
     parser.add_argument("--epsilon",default=0.99,type=int,help="Epsilon paramter for CDMExploration.")
-    parser.add_argument("--load_dir",default=None,type=str,help='Specifies dir to load ego topology from instead of generating a new one.')
+    parser.add_argument("--load_graph_dir",default=None,type=str,help='Specifies dir to load ego topology from instead of generating a new one.')
     parser.add_argument("--top_dir",default='./data/Ego/',type=str,help='Top level directory to store created datsets in')
     parser.add_argument("--overwrite",default=False,type=bool,help='Will not overwrite directory of same name unless this flag is True')
     args = parser.parse_args()

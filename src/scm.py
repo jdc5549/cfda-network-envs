@@ -8,9 +8,11 @@ class SCM():
 		self.G = G
 		self.cascade_type = cascade_type
 		self.comm_net = comm_net
+		self.past_results = {}
 		#SCM is a directed graph with 2 nodes for every node in G. Nodes 1-N represent state of nodes in G at time 0, and nodes N+1-2N represent state of nodes at time 1.
 		self.SCM = nx.DiGraph()
-
+		if cascade_type == 'shortPath':
+			self.l0 = None
 		if cascade_type == 'threshold' or cascade_type == 'shortPath':
 			#Add thresholds to the nodes in G
 			if thresholds is None:
@@ -19,7 +21,7 @@ class SCM():
 					if cascade_type == 'threshold':
 						thresh = 1/len(self.G[node])*np.random.choice([i for i in range(1,len(self.G[node])+1)])
 					else: #cascade_type == 'shortPath':
-						thresh = np.random.normal(1,0.5)
+						thresh = max((np.random.normal(1,0.5),0))
 					self.thresholds.append(thresh)
 			else:
 				self.thresholds = thresholds
@@ -51,24 +53,35 @@ class SCM():
 		self.reset()
 
 	def reset(self):
+		num_nodes = self.G.number_of_nodes()
 		if self.cascade_type == 'coupled':
 			for d in ['P','C']:
 				for i in range(int(len(self.SCM.nodes())/2)):
 					self.SCM.nodes()[f'{d}{i}']['state'] = 1
-			self.dp = [self.G.degree(n) for n in range(self.G.number_of_nodes())]
+			self.dp = [self.G.degree(n) for n in range(num_nodes)]
 			self.dc = [self.comm_net.degree(n) for n in range(self.comm_net.number_of_nodes())]
 		else:
 			for i in range(len(self.SCM.nodes())):
 				self.SCM.nodes()[i]['state'] = 1
 			if self.cascade_type == 'shortPath':
-				self.loads = np.zeros(self.G.number_of_nodes())
-				paths = dict(nx.all_pairs_shortest_path(self.G))
-				for s in paths:
-					for t in paths[s]:
-						for n in paths[s][t]:
-							if s < t:
-								self.loads[n] += 1	
-				self.capacity = [int(np.round(self.loads[n]*max([(1+self.thresholds[n]),1]))) for n in range(self.G.number_of_nodes())]
+				if self.l0 is None:
+					self.loads = np.zeros(num_nodes)
+					paths = dict(nx.all_pairs_shortest_path(self.G))
+					#self.loads_from_n = np.zeros(num_nodes,num_nodes)
+					for s in paths:
+						for t in paths[s]:
+							if len(paths[s][t]) > 2:
+								for n in paths[s][t][1:-1]:
+									#loads_from_n[n][s]
+									if s < t:
+										self.loads[n] += 1
+					self.capacity = [int(max((self.loads[n],num_nodes*0.2))*(self.thresholds[n]+1)) for n in range(num_nodes)]
+					self.l0 = self.loads
+				else:
+					self.loads = self.l0
+				# print(f'loads: {self.loads}')
+				# print(f'capacity: {self.capacity}')
+				# exit()
 
 	def check_cascading_failure(self,initial_failures):
 		for n in initial_failures:
@@ -101,8 +114,8 @@ class SCM():
 					if n not in failure_set:
 						failure_set.append(n) 
 						pow_copy.remove_node(n)
-
 		while not steady_state and x < ee:
+			failset_key = hash(tuple(failure_set))
 			if self.cascade_type == 'threshold':
 				#Check immediate cascades
 				for n in range(0, self.G.number_of_nodes()):
@@ -133,14 +146,19 @@ class SCM():
 				# 		plt.draw()
 				# 		plt.show()
 			elif self.cascade_type == 'shortPath':
-				#redistribute loads and fail any that exceed capacity
-				self.loads = np.zeros(self.G.number_of_nodes())
-				paths = dict(nx.all_pairs_shortest_path(pow_copy))
-				for s in paths:
-					for t in paths[s]:
-						for n in paths[s][t]:
-							if s < t:
-								self.loads[n] += 1	
+				if failset_key in self.past_results:
+					self.loads = self.past_results[failset_key]
+				else:
+					#redistribute loads and fail any that exceed capacity
+					self.loads = np.zeros(self.G.number_of_nodes())
+					paths = dict(nx.all_pairs_shortest_path(pow_copy))
+					for s in paths:
+						for t in paths[s]:
+							if len(paths[s][t]) > 2:
+								for n in paths[s][t][1:-1]:
+									if s < t:
+										self.loads[n] += 1	
+					self.past_results[failset_key] = self.loads
 				sub = self.G.subgraph([n for n in self.G.nodes() if n not in failure_set])
 				ccs = sorted(nx.connected_components(sub),key=len,reverse=True)
 				Gcc = self.G.subgraph(ccs[0])
@@ -215,7 +233,9 @@ class SCM():
 			print(f'Steady State not reached. Returning with failure set {failure_set}')
 		return failure_set
 
-	def show_graph(self,G):
+	def show_graph(self,G=None):
+		if G is None:
+			G = self.G
 		import matplotlib.pyplot as plt
 		nx.draw(G,with_labels=True)
 		plt.draw()
