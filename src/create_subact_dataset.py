@@ -263,6 +263,7 @@ def create_dataset(args):
     all_actions = get_combinatorial_actions(args.ego_graph_size,2)
     subact_save_name = save_dir + f'subact_{args.cascade_type}casc'
     if not args.overwrite and os.path.exists(f'{subact_save_name}_splitbyset_trialdata.npy') and os.path.exists(f'{subact_save_name}_splitbyset_trialinfo.pkl'):
+        print(f'Loading Factual Data from: {subact_save_name}_trialdata.npy')
         allsets_trialdata = np.load(f'{subact_save_name}_splitbyset_trialdata.npy')
         with open(f'{subact_save_name}_splitbyset_trialinfo.pkl','rb') as file:
             allsets_trialinfo = pickle.load(file)
@@ -346,21 +347,28 @@ def create_dataset(args):
     cfac_trials = None
     cfac_data_time = None
     if args.cfda:
-        #generate counterfactuals from this data
-        p = 2/args.ego_graph_size
-        env = NetworkCascEnv(args.ego_graph_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
-        cfac_fns = Counterfactual_Cascade_Fns(env)
-        cfac_trials,cfac_info,cfac_data_time = cfac_fns.gen_cross_subset_cfacs(allsets_trialdata,allsets_trialinfo,casc_keys,all_actions,max_ratio=100)
-        np.save(save_dir + f'subact_{args.cascade_type}casc_CFACtrialdata.npy',cfac_trials)
-        with open(save_dir + f'subact_{args.cascade_type}casc_CFACtrialinfo.pkl','wb') as file:
-            pickle.dump(cfac_info,file)
+        if not args.overwrite and os.path.exists(f'{subact_save_name}_CFACtrialdata.npy' and os.path.exists(f'{subact_save_name}_CFACtrialinfo.pkl')):
+            print(f'Loading Counterfactuals from: {subact_save_name}_CFACtrialdata.npy')
+            cfac_trials = np.load(f'{subact_save_name}_CFACtrialdata.npy')
+        else:
+            #generate counterfactuals from this data
+            p = 2/args.ego_graph_size
+            env = NetworkCascEnv(args.ego_graph_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
+            cfac_fns = Counterfactual_Cascade_Fns(env)
+            cfac_trials,cfac_info,cfac_data_time = cfac_fns.gen_cross_subset_cfacs(allsets_trialdata,allsets_trialinfo,casc_keys,all_actions,max_ratio=100)
+            np.save(save_dir + f'subact_{args.cascade_type}casc_CFACtrialdata.npy',cfac_trials)
+            with open(save_dir + f'subact_{args.cascade_type}casc_CFACtrialinfo.pkl','wb') as file:
+                pickle.dump(cfac_info,file)
 
-    train_data = casc_data #casc_data.reshape((-1,5))[:]
-    if args.max_valset_trials > 0:
-        if args.cfda:
-            train_data = np.concatenate((train_data,cfac_trials))
-        val_data = perform_val_trials(args,topo_fn,train_data[:,:-1])
-        np.save(save_dir + f'subact_{args.cascade_type}casc_valdata.npy',val_data)
+    if args.overwrite or not os.path.exists(f'{subact_save_name}_valdata.npy'):
+        train_data = casc_data #casc_data.reshape((-1,5))[:]
+        if args.max_valset_trials > 0:
+            if args.cfda:
+                train_data = np.concatenate((train_data,cfac_trials))
+            val_data = perform_val_trials(args,topo_fn,train_data[:,:-1])
+            np.save(save_dir + f'subact_{args.cascade_type}casc_valdata.npy',val_data)
+    else:
+        print(f'Loading Validation Data from: {subact_save_name}_valdata.npy')
 
     num_cfac_data = len(cfac_trials) if cfac_trials is not None else None
     return len(casc_keys),num_cfac_data,fac_data_time,cfac_data_time
