@@ -136,25 +136,36 @@ def perform_training_trials(args,topo_fn,past_keys,target_set):
     #     pickle.dump(trial_info,file)
     return trial_data,trial_info,env.scm.past_results
 
-def perform_val_trials(args,topo_fn,train_actions):
+def perform_val_trials(args,topo_fn,train_actions,cycle=False):
     net_size = args.ego_graph_size
     p = 2/net_size
     env = NetworkCascEnv(net_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
     all_actions = get_combinatorial_actions(net_size,2)
     val_actions = []
-    break_flag = False
-    action_combinations = list(itertools.combinations(all_actions, 2))
-    shuffled_combinations = action_combinations.copy()
-    random.shuffle(shuffled_combinations)
+    if cycle:
+        action_combinations = list(itertools.combinations(all_actions, 2))
+        shuffled_combinations = action_combinations.copy()
+        random.shuffle(shuffled_combinations)
+        break_flag = False
 
-    with tqdm(total=args.max_valset_trials, desc='Validation Trials', unit='iteration') as pbar:
-        for a1,a2 in shuffled_combinations:
-            casc = a1 + a2
-            if not np.any(np.all(train_actions == casc, axis=1)):
-                val_actions.append((a1, a2))
-                pbar.update(1)  # Update the progress bar with each iteration
-            if len(val_actions) >= args.max_valset_trials:
-                break
+    with tqdm(total=args.max_valset_trials, desc='Validation Action Selection', unit='iteration') as pbar:
+        if cycle:
+            for a1,a2 in shuffled_combinations:
+                casc = a1 + a2
+                if not np.any(np.all(train_actions == casc, axis=1)):
+                    val_actions.append((a1, a2))
+                    pbar.update(1)  # Update the progress bar with each iteration
+                if len(val_actions) >= args.max_valset_trials:
+                    break
+        else:
+            while len(val_actions) < args.max_valset_trials:
+                a1 = random.sample(all_actions,k=1)[0]
+                a2 = random.sample(all_actions,k=1)[0]
+                casc = a1 + a2
+                if not np.any(np.all(train_actions == casc, axis=1)):
+                    val_actions.append((a1, a2))
+                    pbar.update(1)  # Update the progress bar with each iteration
+
     # for i,a1 in enumerate(all_actions):
     #     for j,a2 in enumerate(all_actions):
     #         casc = a1 + a2
@@ -166,9 +177,11 @@ def perform_val_trials(args,topo_fn,train_actions):
     #     if break_flag:
     #         break
     val_trial_data = np.zeros((len(val_actions),5))
-    for j,action in enumerate(val_actions):
-        _, reward, _, info = env.step(action)
-        val_trial_data[j,:] = np.concatenate((action[0], action[1], [reward[0]])) 
+    with tqdm(total=len(val_actions), desc='Validation Trials', unit='iteration') as pbar:
+        for j,action in enumerate(val_actions):
+            _, reward, _, info = env.step(action)
+            val_trial_data[j,:] = np.concatenate((action[0], action[1], [reward[0]])) 
+            pbar.update(1)
     return val_trial_data
 
 def subset_selection(method):
@@ -234,7 +247,7 @@ def create_dataset(args):
     save_dir += '_CfDA/' if args.cfda else '/'
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
-    if not args.overwrite:
+    if not args.overwrite and os.path.exists(save_dir + 'subact_sets.npy'):
         subact_sets = np.load(save_dir + 'subact_sets.npy')
     else:
         nodes = [i for i in range(args.ego_graph_size)]
@@ -347,7 +360,7 @@ def create_dataset(args):
     cfac_trials = None
     cfac_data_time = None
     if args.cfda:
-        if not args.overwrite and os.path.exists(f'{subact_save_name}_CFACtrialdata.npy' and os.path.exists(f'{subact_save_name}_CFACtrialinfo.pkl')):
+        if not args.overwrite and os.path.exists(f'{subact_save_name}_CFACtrialdata.npy') and os.path.exists(f'{subact_save_name}_CFACtrialinfo.pkl'):
             print(f'Loading Counterfactuals from: {subact_save_name}_CFACtrialdata.npy')
             cfac_trials = np.load(f'{subact_save_name}_CFACtrialdata.npy')
         else:

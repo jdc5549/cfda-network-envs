@@ -28,9 +28,9 @@ class MABAgent():
     :param name: (str) The name of the agent      
     """
     
-    def __init__(self, action_space, exploration="EpsGreedy", lr=0.01,sched_step=100,gamma=0.1, name="MABAgent",device='cpu'):
+    def __init__(self, action_space, network_size, exploration="EpsGreedy", lr=0.01,sched_step=100,gamma=0.1, name="MABAgent",device='cpu'):
         model = MABTable(gymSpace2dim(action_space),device=device)
-        self.policy = MABCriticPolicy(model,gymSpace2dim(action_space))
+        self.policy = MABCriticPolicy(model,gymSpace2dim(action_space),network_size)
         self.exploration = exploration
         self.lr = lr
         self.gamma = gamma

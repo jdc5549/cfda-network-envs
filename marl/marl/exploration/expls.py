@@ -12,7 +12,7 @@ class UCB1(ExplorationProcess):
 
     def reset(self, t=None):
         """ Reinitialize the state of the process """
-        self.count = torch.tensor([1 for _ in range(n_actions)]).to(device)
+        self.count = torch.tensor([1 for _ in range(self.n_actions)]).to(device)
         self.t = sum(self.count)
         
     def update(self, t):

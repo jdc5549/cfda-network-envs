@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import time
 import random
 import multiprocessing as mp
@@ -7,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
+from tqdm import tqdm
 
 import marl
 from .policy import Policy, ModelBasedPolicy
@@ -71,8 +73,8 @@ class TargetedPolicy(Policy):
             G = nx.from_numpy_matrix(state[j][:-1])
             node_degrees = [G.degree(n) for n in G.nodes]
             act_degrees = [node_degrees[act[0]] + node_degrees[act[1]] for act in self.all_actions]
-            sorted_idx = np.flip(np.argsort(act_degrees))
-            sorted_acts = [self.all_actions[idx] for idx in sorted_idx]
+            self.sorted_idx = np.flip(np.argsort(act_degrees))
+            sorted_acts = [self.all_actions[idx] for idx in self.sorted_idx]
             actions = sorted_acts[:num_actions]
             if len(actions) > 1:
                 actions_list.append(actions)
@@ -89,7 +91,7 @@ class RTMixedPolicy(Policy):
     """
     def __init__(self, action_space,pt,num_actions=1,all_actions=[]):
         self.action_space = action_space
-        self.num_actions=num_actions
+        self.num_actions= num_actions
         self.all_actions = all_actions
         self.pt = pt
 
@@ -286,9 +288,9 @@ class MABCriticPolicy(ModelBasedPolicy):
     :param model: (Model or torch.nn.Module) The q-value model 
     :param action_space: (gym.Spaces) The action space
     """
-    def __init__(self, model, action_space):
+    def __init__(self, model, action_space,network_size):
         self.action_space = action_space
-        self.all_actions = get_combinatorial_actions(action_space,2)
+        self.all_actions = get_combinatorial_actions(network_size,2)
         self.model = marl.model.make(model, act_sp=gymSpace2dim(self.action_space))
 
     def get_policy(self):
@@ -414,15 +416,50 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
     :param observation_space: (gym.Spaces) The observation space
     :param action_space: (gym.Spaces) The action space
     """
-    def __init__(self, model, action_space = None,player=0,all_actions=[],eval_mode=False,device='cpu'):
+    def __init__(self, model, action_space = None,player=0,all_actions=[],eval_mode=False,device='cpu',model_path=None):
         self.action_space = action_space
         self.model = model
         self.player = player
         self.all_actions = all_actions
-        self.action_indices = torch.tensor([i for i in range(len(self.all_actions))]).to(torch.long).to(device)
+        self.max_size_in_mem = 250000
+        self.device = device
+        #if len(all_actions)*len(all_actions) > self.max_size_in_mem:
+        self.action_indices = torch.tensor([i for i in range(len(self.all_actions))]).to(torch.long).to(self.device)
+        #else:
+        #    self.action_indices = torch.tensor([i for i in range(len(self.all_actions))]).to(torch.long).to(device)
         self.eval_mode = eval_mode
-        self.policy = None
+        self.model_path = model_path
+        policy_file = f'{self.model_path}/player{self.player}_policy.npy'
+        if os.path.exists(policy_file):
+            self.policy = np.load(policy_file)
+            print(f'Loaded player {self.player} policy from {policy_file}')
+        else:
+            self.policy = None
 
+    def get_large_policy(self,node_features=None,edge_index=None):
+        import os
+        assert os.path.exists(self.model_path)
+        num_player_actions = gymSpace2dim(self.action_space)
+        num_p1_acts = gymSpace2dim(self.action_space)
+        num_p2_acts = gymSpace2dim(self.action_space)
+        expanded_features = None
+        U_player = np.zeros(len(self.all_actions))
+        with tqdm(total=len(self.action_indices),desc=f'Player {self.player} Ego Policy Progress') as pbar:
+            for a in range(len(self.all_actions)):
+                if self.player == 0:
+                    actions = torch.stack((a*torch.ones((len(self.all_actions),),device=self.device),self.action_indices)).T.to(torch.int)
+                else:
+                    actions = torch.stack((self.action_indices,a*torch.ones((len(self.all_actions),),device=self.device))).T.to(torch.int)
+                out = torch.squeeze(self.Q(actions,expanded_features)).detach()*(-2*self.player +1)
+                val = torch.mean(torch.mean(out,dim=-1),dim=-1).cpu().numpy()
+                U_player[a] = val
+                pbar.update(1)
+        policy = F.gumbel_softmax(torch.tensor(U_player)).numpy()
+        if self.model_path is not None:
+            np.save(f'{self.model_path}/player{self.player}_policy.npy',policy)
+            np.save(f'{self.model_path}/player{self.player}_util.npy',U_player)
+        return policy, U_player
+ 
     def get_policy(self,node_features=None,edge_index=None):
         #print('t_obs in get_policy:', state)
         num_player_actions = gymSpace2dim(self.action_space)
@@ -430,7 +467,10 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
         num_p2_acts = gymSpace2dim(self.action_space)
         c = np.zeros(num_player_actions+1)
         c[num_player_actions] = -1
-        U = np.zeros([num_p1_acts,num_p2_acts])
+        if num_player_actions > self.max_size_in_mem/4:
+            U = np.zeros([num_p1_acts,num_p2_acts],dtype=np.half)
+        else:
+            U = np.zeros([num_p1_acts,num_p2_acts])
         # U = (-2*self.player +1) * np.array([[0.1 for i in range(10)],[0.1 for i in range(10)],
         #     [0.2 for i in range(10)],[0.6 for i in range(10)],[0.1 for i in range(10)],
         #     [0.2 for i in range(10)],[0.2 for i in range(10)],[0.2 for i in range(10)],
@@ -449,7 +489,7 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
         if edge_index is not None:
             out = torch.squeeze(self.Q(actions,expanded_features,edge_index)).detach()*(-2*self.player +1)
         else:
-            out = torch.squeeze(self.Q(actions,expanded_features)).detach()*(-2*self.player +1)            
+            out = torch.squeeze(self.Q(actions,expanded_features)).detach()*(-2*self.player +1)           
         U = torch.mean(out,dim=-1).cpu().numpy()
         if self.player == 0:
             U_calc = -U.T #LP package requires the player to be the column player
@@ -476,7 +516,10 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
     def __call__(self,state=None):          
         with torch.no_grad():
             if self.policy is None or not self.eval_mode:
-                self.policy, self.value = self.get_policy(self.action_indices)
+                if len(self.action_indices) > self.max_size_in_mem:
+                    self.policy, self.value = self.get_large_policy(self.action_indices)
+                else:
+                    self.policy, self.value = self.get_policy(self.action_indices)
             try:
                 pd = Categorical(torch.tensor(self.policy))
             except:

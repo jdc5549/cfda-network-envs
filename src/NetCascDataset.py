@@ -75,14 +75,14 @@ class NetCascDataset_Subact(Dataset):
 
             # Convert the shared array to a torch tensor
             self.comb_action_idxs_mp = torch.tensor(result_comb_action_idxs, dtype=torch.long).view(-1, 2)
-        self.comb_action_idxs_sp = torch.zeros((self.action_data.shape[0],2),dtype=torch.long)
-        for i,a in enumerate(self.action_data):
-            atk_act = tuple(a[:2])
-            comb_idx = all_actions.index(atk_act)
-            self.comb_action_idxs_sp[i,0] = comb_idx
-            def_act = tuple(a[2:])
-            comb_idx = all_actions.index(def_act)
-            self.comb_action_idxs_sp[i,1] = comb_idx
+        #self.comb_action_idxs_sp = torch.zeros((self.action_data.shape[0],2),dtype=torch.long)
+        # for i,a in enumerate(self.action_data):
+        #     atk_act = tuple(a[:2])
+        #     comb_idx = all_actions.index(atk_act)
+        #     self.comb_action_idxs_sp[i,0] = comb_idx
+        #     def_act = tuple(a[2:])
+        #     comb_idx = all_actions.index(def_act)
+        #     self.comb_action_idxs_sp[i,1] = comb_idx
         self.failset_onehot_data = torch.zeros((casc_data.shape[0],self.thresholds.shape[0]))
         self.comb_action_idxs = self.comb_action_idxs_mp
         if not val:
@@ -158,19 +158,19 @@ class NetCascDataset_Subact(Dataset):
         if start == 0:
             for i in tqdm(range(len(result_comb_action_idxs)), desc="First Chunk Progress", leave=False):
                 a = action_data[i+start]
-                atk_act = tuple(a[:2])
+                atk_act = tuple(sorted(a[:2]))
                 comb_idx = all_actions.index(atk_act)
                 result_comb_action_idxs[i, 0] = comb_idx
-                def_act = tuple(a[2:])
+                def_act = tuple(sorted(a[2:]))
                 comb_idx = all_actions.index(def_act)
                 result_comb_action_idxs[i, 1] = comb_idx                
         else:
             for i in range(len(result_comb_action_idxs)):
                 a = action_data[i+start]
-                atk_act = tuple(a[:2])
+                atk_act = tuple(sorted(a[:2]))
                 comb_idx = all_actions.index(atk_act)
                 result_comb_action_idxs[i, 0] = comb_idx
-                def_act = tuple(a[2:])
+                def_act = tuple(sorted(a[2:]))
                 comb_idx = all_actions.index(def_act)
                 result_comb_action_idxs[i, 1] = comb_idx
         return result_comb_action_idxs

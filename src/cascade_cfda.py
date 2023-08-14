@@ -395,6 +395,7 @@ class Counterfactual_Cascade_Fns():
 		num_subsets = trial_data.shape[0]
 		num_trials = trial_data.shape[1]
 		fail_components = [[] for j in range(num_subsets)]
+		from multiprocessing import Pool,Lock, Manager,cpu_count
 		for i,sub_info in enumerate(trial_info):
 			for j,info in sub_info.items():
 				fail_set = info['fail_set']
@@ -418,7 +419,6 @@ class Counterfactual_Cascade_Fns():
 							new_failure_component[-1].append(f)
 				fail_components[i].append(new_failure_component)
 
-		from multiprocessing import Pool,Lock, Manager,cpu_count
 		from functools import partial
 		manager = Manager()
 		cfac_trial_data = manager.list()

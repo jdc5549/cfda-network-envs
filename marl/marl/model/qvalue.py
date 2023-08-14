@@ -64,8 +64,13 @@ class MABTable(Model):
     """
     def __init__(self, act_sp,device='cpu'):
         self.n_actions = act_sp
+        # if self.n_actions > 100000:
+        #     # indicies = []
+        #     # values = []
+        #     # size = (self.n_actions)
+        #     self.value = torch.sparse_coo_tensor((self.n_actions))
+        # else:
         self.value = torch.zeros(self.n_actions, dtype=torch.float64,device=device)
-    
     @property
     def q_table(self):
         return self.value
