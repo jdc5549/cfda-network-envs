@@ -98,7 +98,7 @@ def _gen_utils_eqs(fn_c_dir_nn):
     save_dir = fn_c_dir_nn[2]
     num_nodes = fn_c_dir_nn[3]
     p = 2/num_nodes
-    env = NetworkCascEnv(num_nodes,p,p,6,'File',filename=fn,cascade_type=c)
+    env = NetworkCascEnv(num_nodes,p,p,'File',6,filename=fn,cascade_type=c)
     eqs,U = get_nash_eqs(env)
     f_eq = save_dir + f'eq.npy'
     np.save(f_eq,eqs)
@@ -122,7 +122,7 @@ def perform_training_trials(args,topo_fn,past_keys,target_set):
     trial_data = np.zeros((num_trials,5)) #last dim represents n attack nodes, n defense nodes, and attacker reward (in that order)
     trial_info = {}
     exploration.reset()
-    env = NetworkCascEnv(net_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
+    env = NetworkCascEnv(net_size,p,p,'File',6,filename=topo_fn,cascade_type=args.cascade_type)
     env.scm.past_results = past_keys
     for j in range(num_trials):
         action = exploration()
@@ -139,7 +139,7 @@ def perform_training_trials(args,topo_fn,past_keys,target_set):
 def perform_val_trials(args,topo_fn,train_actions,cycle=False):
     net_size = args.ego_graph_size
     p = 2/net_size
-    env = NetworkCascEnv(net_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
+    env = NetworkCascEnv(net_size,p,p,'File',6,filename=topo_fn,cascade_type=args.cascade_type)
     all_actions = get_combinatorial_actions(net_size,2)
     val_actions = []
     if cycle:
@@ -366,7 +366,7 @@ def create_dataset(args):
         else:
             #generate counterfactuals from this data
             p = 2/args.ego_graph_size
-            env = NetworkCascEnv(args.ego_graph_size,p,p,6,'File',filename=topo_fn,cascade_type=args.cascade_type)
+            env = NetworkCascEnv(args.ego_graph_size,p,p,'File',6,filename=topo_fn,cascade_type=args.cascade_type)
             cfac_fns = Counterfactual_Cascade_Fns(env)
             cfac_trials,cfac_info,cfac_data_time = cfac_fns.gen_cross_subset_cfacs(allsets_trialdata,allsets_trialinfo,casc_keys,all_actions,max_ratio=100)
             np.save(save_dir + f'subact_{args.cascade_type}casc_CFACtrialdata.npy',cfac_trials)

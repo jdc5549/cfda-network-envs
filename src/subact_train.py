@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from SL_validate import Validator
 from NetCascDataset import NetCascDataset,NetCascDataset_Subact
-from network_gym_env import NetworkCascEnv
+from netcasc_gym_env import NetworkCascEnv
 sys.path.append('./marl/')
 from models import MLP_Critic
 from tqdm import tqdm
