@@ -27,17 +27,17 @@ python src/subact_train.py --ego_data_dir data/Ego/100C2/ego_valtrials_RandomCyc
 python src/subact_train.py --ego_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/100C2/ego_valtrials_RandomCycleExpl/500sets_5targets_100trials_RandomCycleExpl_CfDA/ --exp_name '100_5C2_CFDA1' --mlp_hidden_depth 3 --num_epochs 2000 --sched_step 1500 --val_freq 25 --batch_size 128 --mlp_hidden_size 64 --embed_size 128
 
 cuda 0 training
-python src/subact_train.py --ego_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/1sets_1000targets_318992trials_RandomExpl/ --exp_name '1000_1000C2_thresh2' --mlp_hidden_depth 3 --num_epochs 100 --sched_step 1500 --val_freq 25 --batch_size 1024 --mlp_hidden_size 128 --embed_size 128 --device cuda:0
+python src/subact_train.py --ego_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/1sets_1000targets_318992trials_RandomExpl/ --exp_name '1000_1000C2_sp1' --mlp_hidden_depth 3 --num_epochs 100 --sched_step 1500 --val_freq 25 --batch_size 1024 --mlp_hidden_size 128 --embed_size 128 --device cuda:0 --cascade_type 'shortPath'
 
 cuda 1 training
-python src/subact_train.py --ego_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/3200sets_5targets_100trials_RandomCycleExpl_CfDA/ --exp_name '1000_5C2_thresh2' --mlp_hidden_depth 3 --num_epochs 100 --sched_step 1500 --val_freq 25 --batch_size 1024 --mlp_hidden_size 128 --embed_size 128 --device cuda:1
+python src/subact_train.py --ego_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/ --subact_data_dir data/Ego/1000C2/ego_valtrials_RandomCycleExpl/3200sets_5targets_100trials_RandomCycleExpl_CfDA/ --exp_name '1000_5C2_sp1' --mlp_hidden_depth 3 --num_epochs 100 --sched_step 1500 --val_freq 25 --batch_size 1024 --mlp_hidden_size 128 --embed_size 128 --device cuda:1 --cascade_type 'shortPath'
 
 Exploiters
 python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --ego_exp_name '25_5C2_80sets_nofeat2' --ego_model_path 'models/subact/25_5C2/25_5C2_80sets_nofeat2/' --exp_name '25_5C2_threshold1' --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --exploration_type 'EpsGreedy' --cascade_type 'threshold'
 
 python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --ego_exp_name '25_5C2_80sets_CfDA1' --ego_model_path 'models/subact/25_5C2/25_5C2_80sets_CfDA1/' --exp_name '25_5C2_CFA_threshold1' --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --exploration_type 'EpsGreedy' --cascade_type 'threshold'
 
-python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --exp_name '25_RTMixed_EG2' --exploited_type RTMixed --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --exploration_type 'EpsGreedy'
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --exp_name 'garbage_test' --exploited_type RTMixed --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --exploration_type 'EpsGreedy'
 
 
 python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --ego_model_path 'models/subact/100_100C2/100_100C2_1sets_noheuristic1' --net_path 'data/Ego/100C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_exp_name '100_100C2_1sets_noheuristic1' --net_size 100 --exp_name '100_100C2_exploiters2' --exploration_type 'EpsGreedy' 
@@ -50,6 +50,10 @@ python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learn
 python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 1000 --exp_name '1000_RTMixed_EG1' --net_path 'data/Ego/1000C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --exploration_type 'EpsGreedy'
 
 
-python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 1000 --exp_name '1000_1000C2_EG1' --net_path 'data/Ego/1000C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_model_path 'models/subact/1000_1000C2/1000_1000C2_thresh2/' --ego_exp_name '1000_1000C2_thresh2' --exploration_type 'EpsGreedy' --device cuda:1
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 1000 --exp_name '1000_1000C2_EG1' --net_path 'data/Ego/1000C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_model_path 'models/subact/1000_1000C2/1000_1000C2_thresh2/' --ego_exp_name '1000_1000C2_thresh_redo' --exploration_type 'EpsGreedy' --device cuda:1
 
-python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 1000 --exp_name '1000_5C2_CfDA_EG1' --net_path 'data/Ego/1000C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_model_path 'models/subact/1000_5C2/1000_5C2_thresh_CFDA1/' --ego_exp_name '1000_5C2_thresh_CFDA1' --exploration_type 'EpsGreedy' --device cuda:0
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 1000 --exp_name '1000_5C2_CfDA_EG1' --net_path 'data/Ego/1000C2/ego_valtrials_RandomCycleExpl/net_0.edgelist' --ego_model_path 'models/subact/1000_5C2/1000_5C2_thresh_CFDA1/' --ego_exp_name '1000_5C2_thresh_CFDA_redo' --exploration_type 'EpsGreedy' --device cuda:0
+
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --exp_name '25_RTMixed_redo' --exploited_type RTMixed --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --exploration_type 'EpsGreedy'
+
+python src/train_RL_exploiters.py --training_steps 100 --batch_size 1000 --learning_rate 0.1 --net_size 25 --ego_exp_name '25_5C2_80sets_nofeat2' --ego_model_path 'models/subact/25_5C2/25_5C2_80sets_nofeat2/' --exp_name '25_5C2_threshold_redo' --net_path 'data/Ego/25C2/ego_NashEQ/net_0.edgelist' --exploration_type 'EpsGreedy' --cascade_type 'threshold'
