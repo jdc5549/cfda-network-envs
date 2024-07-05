@@ -61,7 +61,7 @@ class NetCascDataset_Subact(Dataset):
         #     self.z_action_data[i][0][a[:2]] = 1
         #     self.z_action_data[i][1][a[2:]] = 1
 
-        num_processes = mp.cpu_count()-2
+        num_processes = min((mp.cpu_count()-2,4))
         chunk_size = len(self.action_data) // num_processes
         #rem = len(self.action_data) % chunk_size
 
