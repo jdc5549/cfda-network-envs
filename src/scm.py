@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utils import create_random_nets
 class SCM():
-	def __init__(self,G, cascade_type='threshold',comm_net=None,thresholds=None):
+	def __init__(self,G, cascade_type='threshold',comm_net=None):
 		self.G = G
 		self.cascade_type = cascade_type
 		self.comm_net = comm_net
@@ -15,16 +15,16 @@ class SCM():
 			self.l0 = None
 		if cascade_type == 'threshold' or cascade_type == 'shortPath':
 			#Add thresholds to the nodes in G
-			if thresholds is None:
-				self.thresholds = []
-				for node in self.G.nodes():
-					if cascade_type == 'threshold':
-						thresh = 1/len(self.G[node])*np.random.choice([i for i in range(1,len(self.G[node])+1)])
-					else: #cascade_type == 'shortPath':
-						thresh = max((np.random.normal(1,0.5),0))
-					self.thresholds.append(thresh)
-			else:
-				self.thresholds = thresholds
+			# if thresholds is None:
+			# 	self.thresholds = []
+			# 	for node in self.G.nodes():
+			# 		if cascade_type == 'threshold':
+			# 			thresh = 1/len(self.G[node])*np.random.choice([i for i in range(1,len(self.G[node])+1)])
+			# 		else: #cascade_type == 'shortPath':
+			# 			thresh = max((np.random.normal(1,0.5),0))
+			# 		self.thresholds.append(thresh)
+			# else:
+			self.thresholds = [self.G.nodes[n]['threshold'] for n in self.G.nodes]
 			for i in range(2*self.G.number_of_nodes()):
 				self.SCM.add_node(i,state=1)
 			for node in self.G.nodes():
@@ -85,10 +85,11 @@ class SCM():
 
 	def check_cascading_failure(self,initial_failures):
 		for n in initial_failures:
+			# if n in immunized:
+			# 	continue
 			if self.cascade_type == 'coupled':
 				self.SCM.nodes()[f'P{n}']['state'] = 0
 				self.SCM.nodes()[f'P{n+self.G.number_of_nodes()}']['state'] = 0
-
 			else:
 				self.SCM.nodes()[n]['state'] = 0
 				self.SCM.nodes()[n+self.G.number_of_nodes()]['state'] = 0
@@ -102,6 +103,8 @@ class SCM():
 			comm_copy = self.comm_net.copy()
 			#Check initial cascades
 			for n in range(0, self.G.number_of_nodes()):
+				# if n in immunized:
+				# 	continue
 				if self.SCM.nodes()[f'P{n}']['state'] == 0:
 					if n not in failure_set:
 						failure_set.append(n) 
@@ -110,6 +113,8 @@ class SCM():
 		if self.cascade_type == 'shortPath':
 			#Check initial cascades
 			for n in range(0, self.G.number_of_nodes()):
+				# if n in immunized:
+				# 	continue
 				if self.SCM.nodes()[n]['state'] == 0:
 					if n not in failure_set:
 						failure_set.append(n) 
@@ -119,12 +124,20 @@ class SCM():
 			if self.cascade_type == 'threshold':
 				#Check immediate cascades
 				for n in range(0, self.G.number_of_nodes()):
+					# if n in immunized:
+					# 	continue
 					if self.SCM.nodes()[n]['state'] == 0:
 						self.SCM.nodes()[n+self.G.number_of_nodes()]['state'] = 0
 						if n not in failure_set:
 							failure_set.append(n) 
 					neighbor_states = [self.SCM.nodes()[v]['state'] for v in self.G[n]]
-					if (1-np.mean(neighbor_states)) > self.thresholds[n]:
+					failed_neighbor_frac = (1-np.mean(neighbor_states)) + 1e-9
+					# if n == 7:
+					# 	print(f'Node {n}')
+					# 	print(neighbor_states)
+					# 	print(f'Failed Frac: {failed_neighbor_frac}')
+					# 	print(f"Thresh: {self.G.nodes[n]['threshold']}")
+					if failed_neighbor_frac >= self.G.nodes[n]['threshold']:
 						self.SCM.nodes()[n+self.G.number_of_nodes()]['state'] = 0
 						if n not in failure_set:
 							failure_set.append(n)
@@ -163,6 +176,8 @@ class SCM():
 				ccs = sorted(nx.connected_components(sub),key=len,reverse=True)
 				Gcc = self.G.subgraph(ccs[0])
 				for n in range(0, self.G.number_of_nodes()):
+					# if n in immunized:
+					# 	continue					
 					if self.loads[n] > self.capacity[n] or n not in Gcc.nodes():
 						self.SCM.nodes()[n+self.G.number_of_nodes()]['state'] = 0
 						if n not in failure_set:
@@ -178,6 +193,8 @@ class SCM():
 			elif self.cascade_type == 'coupled':
 				#Check immediate cascades
 				for n in range(0, self.G.number_of_nodes()):
+					# if n in immunized:
+					# 	continue					
 					if self.SCM.nodes()[f'P{n}']['state'] == 0 or self.SCM.nodes()[f'C{n}']['state'] == 0:
 						self.SCM.nodes()[f'P{n+self.G.number_of_nodes()}']['state'] = 0
 						self.SCM.nodes()[f'C{n+self.G.number_of_nodes()}']['state'] = 0
@@ -242,21 +259,34 @@ class SCM():
 		plt.show()
 
 if __name__ == '__main__':
-	num_nodes = 10
+	fn = 'graphs/toynets/toynet_3c_5n.gpickle'
+	G = nx.read_gpickle(fn)
+	num_nodes = G.number_of_nodes()
 	num_attacked = 1
+	initial_failure = np.random.choice([i for i in range(num_nodes)],size=num_attacked,replace=False)
+	immunizations = np.random.choice([i for i in range(num_nodes)],size=num_attacked,replace=False)
+	scm = SCM(G,cascade_type='threshold')
+	print(f'Intial Failure: {initial_failure}')
+	print(f'Initial Immunizations: {immunizations}')
+	immunized_set = scm.check_cascading_failure(immunizations)
+	#print(f'Final Immunized Set: {immunized_set}')
+	scm.reset()
+	failure_set = scm.check_cascading_failure(initial_failure)
+	#print(f'Potential Failure Set: {failure_set}')
+	print(f'Final Failure: {len([n for n in failure_set if n not in immunized_set])}')
 
-	for i in range(1000):
-		comm_net,pow_net = create_random_nets('',num_nodes,num2gen=1,show=False)
-		scm = SCM(pow_net,cascade_type='coupled',comm_net=comm_net)
-		for j in range(100):
-			initial_failures = np.random.choice([i for i in range(num_nodes)],size=num_attacked,replace=False)
-			num_fails = []
-			for k in range(10):
-				failure_set = scm.check_cascading_failure(initial_failures=initial_failures)
-				scm.reset()
-				num_fails.append(len(failure_set))
-			if np.std(num_fails) > 0:
-				print(initial_failures)
-				print(np.std(num_fails))
-				exit()
-	print('No variance in scm results.')
+	# for i in range(1000):
+	# 	comm_net,pow_net = create_random_nets('',num_nodes,num2gen=1,show=False)
+	# 	scm = SCM(pow_net,cascade_type='coupled',comm_net=comm_net)
+	# 	for j in range(100):
+	# 		initial_failures = np.random.choice([i for i in range(num_nodes)],size=num_attacked,replace=False)
+	# 		num_fails = []
+	# 		for k in range(10):
+	# 			failure_set = scm.check_cascading_failure(initial_failures=initial_failures)
+	# 			scm.reset()
+	# 			num_fails.append(len(failure_set))
+	# 		if np.std(num_fails) > 0:
+	# 			print(initial_failures)
+	# 			print(np.std(num_fails))
+	# 			exit()
+	# print('No variance in scm results.')

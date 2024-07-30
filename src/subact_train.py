@@ -7,9 +7,9 @@ import os
 import sys
 import re
 from time import perf_counter
+import networkx as nx 
 
 from torch.utils.data import DataLoader as DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
 from SL_validate import Validator
 from NetCascDataset import NetCascDataset,NetCascDataset_Subact
@@ -36,20 +36,25 @@ if __name__ == '__main__':
 	parser.add_argument("--sched_gamma",default=0.1,type=float,help='How much to reduce the learning rate after shed_step steps')
 	parser.add_argument("--mlp_hidden_size",default=64,type=int,help='Hidden layer size for MLP nets used for RL agent.')
 	parser.add_argument("--mlp_hidden_depth",default=2,type=int,help='Hidden layer depth for MLP nets used for RL agent.')
-	parser.add_argument("--dropout_rate",default=0.25,type=float,help='Rate of dropout to use during neural network training')
+	parser.add_argument("--dropout_rate",default=0.4,type=float,help='Rate of dropout to use during neural network training')
 	parser.add_argument("--heuristic_features",default=False,type=bool,help='Whether to use heuristic topological features as input to the neural network.')
 	parser.add_argument("--batch_size",default=64,type=int,help='Batch size for data loader.')
 	parser.add_argument("--val_freq",default=100,type=int,help='Frequency (in epochs) at which to validate model.')
 	parser.add_argument("--cfda",default=False,type=bool,help='Whether to use CfDA data during training.')
 	parser.add_argument("--device",default='cpu',type=str,help='Device to perform training on.')
+	parser.add_argument("--p",default=2,type=int,help='Number of nodes selected for an action')
 
 	args = parser.parse_args()
-	pattern = r'/(\d+)C2/'
-	match = re.search(pattern, args.ego_data_dir)
-	if match:
-	    num_nodes = int(match.group(1))
-	else:
-		print('Could not identify net size from ego file directory. Looking for {N}C{R} pattern in path name.')
+	from torch.utils.tensorboard import SummaryWriter
+	writer = SummaryWriter(os.path.join(args.log_dir, args.exp_name))
+
+	#pattern = r'/(\d+)C2/'
+	#match = re.search(pattern, args.ego_data_dir)
+	#if match:
+	G = nx.read_gpickle(f'{args.ego_data_dir}net_0.gpickle')
+	num_nodes = G.number_of_nodes()#int(match.group(1))
+	#else:
+	#	print('Could not identify net size from ego file directory. Looking for {N}C{R} pattern in path name.')
 
 	if 'cuda' in args.device:
 		if torch.cuda.is_available():
@@ -63,7 +68,7 @@ if __name__ == '__main__':
 	gnn = args.gnn_model is not None
 	if gnn:
 		#initialize the embedding model
-		dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=True)
+		dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,p=args.p,gnn=True,topo_features=args.heuristic_features,cfda=args.cfda)
 		(net_features,edge_index,_),_ = dataset.__getitem__(0)
 		if args.gnn_model == 'GCN':
 			from models import GCN_Critic
@@ -72,21 +77,28 @@ if __name__ == '__main__':
 			#print(f'Input Size: {args.embed_size+num_nodes}')
 			print(f'Number of Model parameters: {sum(p.numel() for p in q_model.parameters())}')
 			q_model.to(device)
+		elif args.gnn_model == 'GAT':
+			from models import GAT_Critic
+			q_model = GAT_Critic(args.embed_size,args.mlp_hidden_size,num_nodes)
+			print(f'Dataset Size: {dataset.__len__()}')
+			#print(f'Input Size: {args.embed_size+num_nodes}')
+			print(f'Number of Model parameters: {sum(p.numel() for p in q_model.parameters())}')	
+			q_model.to(device)
 		else:
 			print(f'GNN model {args.gnn_model} not recognized.')
 			exit()
 		num_targets = dataset.subact_sets.shape[1]
 		data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 	else:
-		dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=False,topo_features=args.heuristic_features,cfda=args.cfda)
+		dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,p=args.p,gnn=False,topo_features=args.heuristic_features,cfda=args.cfda)
 		#Embedding = HeuristicActionEmbedding(dataset.topology,dataset.thresholds)
 		#embedded_act = Embedding.embed_action(torch.tensor([[0,1]]))
 		#act_embed_size = embedded_act.shape[1]
 		#(feat_topo,_),(_,_) = dataset.__getitem__(0)
 		#obs_embed_size = feat_topo.shape[0]
 
-		q_model = MLP_Critic(args.embed_size,args.mlp_hidden_size,num_nodes,dataset.net_features.shape[0],num_mlp_layers=args.mlp_hidden_depth,dropout_rate=args.dropout_rate)
-		print(f'Dataset Size: {dataset.__len__()}')
+		q_model = MLP_Critic(args.embed_size,args.mlp_hidden_size,num_nodes,num_node_features=dataset.net_features.shape[0],p=args.p,num_mlp_layers=args.mlp_hidden_depth,dropout_rate=args.dropout_rate)
+		print(f'Training Dataset Size: {dataset.__len__()}')
 		#print(f'Input Size: {num_nodes+2}')
 		print(f'Number of Model parameters: {sum(p.numel() for p in q_model.parameters())}')
 		q_model.to(device)
@@ -97,8 +109,8 @@ if __name__ == '__main__':
 	hparams = {"training_epochs": args.num_epochs, "learning_rate": args.learning_rate, "sched_step": args.sched_step, "sched_gamma":args.sched_gamma,
 				"cascade_type": args.cascade_type, "batch_size": args.batch_size,"mlp_hidden_size": args.mlp_hidden_size, "mlp_depth": args.mlp_hidden_depth,
 				"net_size": num_nodes,"num_targets":num_targets, "embed_size": args.embed_size,"dropout_rate": args.dropout_rate}
-	writer = SummaryWriter(os.path.join(args.log_dir, args.exp_name))
 	writer.add_hparams(hparams,{'dummy/dummy': 0},run_name=None)#'hparams')
+
 
 
 	print(q_model)
@@ -106,20 +118,22 @@ if __name__ == '__main__':
 	if not os.path.isdir(model_save_dir):
 		os.makedirs(model_save_dir)
 	#init Validator
-	p = 2/num_nodes
+	#p = 2/num_nodes
 	nash_eqs_dir = args.ego_data_dir + f'{args.cascade_type}casc_NashEQs/'
 	val_data_path = args.subact_data_dir + f'subact_{args.cascade_type}casc_valdata.npy'
-	if os.path.isfile(val_data_path):
-		val_dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,gnn=gnn,val=True,topo_features=args.heuristic_features,cfda=False)
+	if os.path.isfile(val_data_path):		
+		val_dataset = NetCascDataset_Subact(args.ego_data_dir,args.subact_data_dir,args.cascade_type,p=args.p,gnn=gnn,val=True,topo_features=args.heuristic_features,cfda=False)
+		print(f'Validation Dataset Size: {val_dataset.__len__()}')
+	
 	else: 
 		val_dataset = None
-	test_env = [NetworkCascEnv(num_nodes,p,p,'File',cascade_type=args.cascade_type,
-				filename = args.ego_data_dir + 'net_0.edgelist')]
-	V = Validator(test_env,subact_sets=dataset.subact_sets,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir,device=device,gnn=gnn)
+	test_env = [NetworkCascEnv(args.p,args.p,'File',cascade_type=args.cascade_type,degree=args.p,
+				filename = args.ego_data_dir + 'net_0.gpickle')]
+	V = Validator(test_env,p=args.p,subact_sets=dataset.subact_sets,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir,device=device,gnn=gnn)
 	#criterion = nn.SmoothL1Loss()
 	criterion = nn.BCELoss()
 
-	optimizer = optim.Adam(q_model.parameters(), lr=args.learning_rate)  # Replace with your own optimizer and learning rate
+	optimizer = optim.Adam(q_model.parameters(), lr=args.learning_rate,weight_decay=1e-5)  # Replace with your own optimizer and learning rate
 	scheduler = lr_scheduler.StepLR(optimizer, step_size=args.sched_step, gamma=args.sched_gamma)
 
 	toc = perf_counter()
@@ -146,26 +160,11 @@ if __name__ == '__main__':
 				(node_features,actions), (reward,multi_hot_failures) = data
 			B = reward.shape[0]
 
-			# for i in range(B):
-			# 	atk_idx[i] = torch.tensor([torch.eq(subact_set[i],a).nonzero()[0][0] for a in atk_acts[i]])
-			# 	def_idx[i] = torch.tensor([torch.eq(subact_set[i],d).nonzero()[0][0] for d in def_acts[i]])
 			node_features = node_features.to(device)
 			actions = actions.to(device)
 			reward = reward.to(device)
 			multi_hot_failures = multi_hot_failures.to(device)
 
-			# #select rows from featurized topology corresponding to nodes attacked
-			# feat_atk = Embedding.embed_action(atk_acts)
-			# feat_atk = feat_atk.to(device)
-			# #feat_atk = feat_topo[torch.arange(feat_topo.size(0))[:, None], atk_idx, :]
-			# #flatten into 1 dimension (not including batch dim)
-			# #feat_atk = feat_atk.view(B,-1)
-
-			# feat_def = Embedding.embed_action(def_acts)
-			# feat_def = feat_def.to(device)
-			# #feat_def = feat_topo[torch.arange(feat_topo.size(0))[:, None], def_idx, :]
-			# #feat_def = feat_def.view(B,-1)
-				#print(atk_idx)
 			# Zero the gradients
 			optimizer.zero_grad()
 
@@ -185,7 +184,7 @@ if __name__ == '__main__':
 			optimizer.step()
 
 			multi_hot_pred = torch.zeros_like(pred)
-			multi_hot_pred[pred > 0.5] = 1
+			multi_hot_pred[pred > 0.1] = 1
 			pred_reward = torch.mean(multi_hot_pred,dim=1)
 			# Accumulate loss/error statistics
 			epoch_loss += loss.item()*B/dataset.__len__()
@@ -226,7 +225,7 @@ if __name__ == '__main__':
 				q_model.train()
 
 		if nash_eq_div is not None:
-			epoch_progress_bar.set_postfix({'train_loss': epoch_loss,'train_err': pred_err,'val_err': val_err,'nash_eq_div': nash_eq_div})
+			epoch_progress_bar.set_postfix({'train_loss': epoch_loss,'train_err': pred_err,'val_err': val_err,'util_err': util_err})
 		else:
 			epoch_progress_bar.set_postfix({'train_loss': epoch_loss,'train_err': pred_err,'val_err': val_err})			
 		epoch_progress_bar.update()

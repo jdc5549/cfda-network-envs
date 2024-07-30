@@ -68,11 +68,13 @@ class TargetedPolicy(Policy):
         
         :param state: (Tensor) The current state
         """
+        comb_size = len(self.all_actions[0])
         actions_list = []
         for j in range(len(state)):
             G = nx.from_numpy_matrix(state[j][:-1])
             node_degrees = [G.degree(n) for n in G.nodes]
-            act_degrees = [node_degrees[act[0]] + node_degrees[act[1]] for act in self.all_actions]
+            #act_degrees = [node_degrees[act[0]] + node_degrees[act[1]] for act in self.all_actions]
+            act_degrees = [np.sum([node_degrees[act[i]] for i in range(comb_size)]) for act in self.all_actions]
             self.sorted_idx = np.flip(np.argsort(act_degrees))
             sorted_acts = [self.all_actions[idx] for idx in self.sorted_idx]
             actions = sorted_acts[:num_actions]
@@ -438,11 +440,10 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
 
     def get_large_policy(self,node_features=None,edge_index=None):
         import os
-        assert os.path.exists(self.model_path)
         num_player_actions = gymSpace2dim(self.action_space)
         num_p1_acts = gymSpace2dim(self.action_space)
         num_p2_acts = gymSpace2dim(self.action_space)
-        expanded_features = None
+        expanded_features = node_features.repeat(num_p1_acts,1)
         U_player = np.zeros(len(self.all_actions))
         with tqdm(total=len(self.action_indices),desc=f'Player {self.player} Ego Policy Progress') as pbar:
             for a in range(len(self.all_actions)):
@@ -467,28 +468,38 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
         num_p2_acts = gymSpace2dim(self.action_space)
         c = np.zeros(num_player_actions+1)
         c[num_player_actions] = -1
-        if num_player_actions > self.max_size_in_mem/4:
-            U = np.zeros([num_p1_acts,num_p2_acts],dtype=np.half)
-        else:
-            U = np.zeros([num_p1_acts,num_p2_acts])
+        # if num_player_actions > self.max_size_in_mem/4:
+        #     U = np.zeros([num_p1_acts,num_p2_acts],dtype=np.half)
+        # else:
+        #     U = np.zeros([num_p1_acts,num_p2_acts])
         # U = (-2*self.player +1) * np.array([[0.1 for i in range(10)],[0.1 for i in range(10)],
         #     [0.2 for i in range(10)],[0.6 for i in range(10)],[0.1 for i in range(10)],
         #     [0.2 for i in range(10)],[0.2 for i in range(10)],[0.2 for i in range(10)],
         #     [0.1 for i in range(10)],[0.3 for i in range(10)]])
         #np.fill_diagonal(U,0)
         #U_noisy = U + np.random.randn(num_p1_acts,num_p2_acts)*1e-4
-        expanded_features = None
-        #expanded_features = node_features.unsqueeze(0)
-        #expanded_features = expanded_features.repeat(self.action_indices.shape[0],self.action_indices.shape[0],1)
-        grid_p1,grid_p2 = torch.meshgrid(self.action_indices,self.action_indices)
-        actions = torch.stack((grid_p1,grid_p2),dim=-1)
-        #p1_act_t = torch.unsqueeze(featurized_actions,dim=1)#torch.zeros(num_p1_acts,self.num_p2_acts,featurized_actions[0].numel())
-        #p1_act_t = p1_act_t.expand(num_p1_acts,num_p2_acts,featurized_actions[0].numel())
-        #p2_act_t = torch.unsqueeze(featurized_actions,dim=0)
-        #p2_act_t = p2_act_t.expand(num_p1_acts,num_p2_acts,featurized_actions[0].numel())
         if edge_index is not None:
-            out = torch.squeeze(self.Q(actions,expanded_features,edge_index)).detach()*(-2*self.player +1)
+            expanded_features = node_features.repeat(self.action_indices.shape[0]*self.action_indices.shape[0],1).unsqueeze(1)
+            edge_index = edge_index.unsqueeze(0)
+            edge_index = edge_index.repeat(self.action_indices.shape[0]*self.action_indices.shape[0],1,1)
+            #expand actions to multi-hot for GNN
+            multi_hot_actions = torch.zeros(self.action_indices.shape[0]*self.action_indices.shape[0],node_features.shape[-1],2)
+            for i,aa in enumerate(self.all_actions):
+                for j,dd in enumerate(self.all_actions):
+                    multi_hot_actions[i*len(self.all_actions)+j,aa,0] = 1
+                    multi_hot_actions[i*len(self.all_actions)+j,dd,1] = 1
+            multi_hot_actions = multi_hot_actions.to(self.device)
+            out = torch.squeeze(self.Q(multi_hot_actions,expanded_features,edge_index)).detach()*(-2*self.player +1)
+            out = out.reshape(self.action_indices.shape[0],self.action_indices.shape[0],-1)
         else:
+            if node_features is None:
+                expanded_features = None
+            else:
+                expanded_features = node_features.unsqueeze(0)
+                expanded_features = expanded_features.repeat(self.action_indices.shape[0],self.action_indices.shape[0],1)
+                #expanded_features = expanded_features.unsqueeze(2)
+            grid_p1,grid_p2 = torch.meshgrid(self.action_indices,self.action_indices)
+            actions = torch.stack((grid_p1,grid_p2),dim=-1)
             out = torch.squeeze(self.Q(actions,expanded_features)).detach()*(-2*self.player +1)           
         U = torch.mean(out,dim=-1).cpu().numpy()
         if self.player == 0:

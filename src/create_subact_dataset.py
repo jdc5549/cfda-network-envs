@@ -1,11 +1,11 @@
 import os
 import numpy as np
 import pygambit as gambit
-import nashpy as nash
 import pickle
 import random
 import time
 import itertools
+import networkx as nx
 
 from netcasc_gym_env import NetworkCascEnv
 from cascade_cfda import Counterfactual_Cascade_Fns
@@ -98,7 +98,7 @@ def _gen_utils_eqs(fn_c_dir_nn):
     save_dir = fn_c_dir_nn[2]
     num_nodes = fn_c_dir_nn[3]
     p = 2/num_nodes
-    env = NetworkCascEnv(num_nodes,p,p,'File',6,filename=fn,cascade_type=c)
+    env = NetworkCascEnv(p,p,'File',6,filename=fn,cascade_type=c)
     eqs,U = get_nash_eqs(env)
     f_eq = save_dir + f'eq.npy'
     np.save(f_eq,eqs)
@@ -108,21 +108,22 @@ def _gen_utils_eqs(fn_c_dir_nn):
 def perform_training_trials(args,topo_fn,past_keys,target_set):
     from SL_exploration import SLExploration, RandomExploration, CDMExploration,RandomCycleExploration
     if args.exploration_type == 'Random':
-        exploration = RandomExploration(target_set)
+        exploration = RandomExploration(target_set,p=args.p)
     elif args.exploration_type == 'RandomCycle':
-        exploration = RandomCycleExploration(target_set)
+        exploration = RandomCycleExploration(target_set,p=args.p)
     elif args.exploration_type == 'CDME':
-        exploration = CDMExploration(target_set,eps=args.epsilon)
+        exploration = CDMExploration(target_set,p=args.p,eps=args.epsilon)
     else:
         print(f'Exploration type {args.exploration_type} not recognized. Exiting...')
         exit()
-    net_size = args.ego_graph_size
+    G = nx.read_gpickle(topo_fn)
+    net_size = G.number_of_nodes()
+    #p = 2/net_size
     num_trials = args.num_trials_sub
-    p = 2/net_size
-    trial_data = np.zeros((num_trials,5)) #last dim represents n attack nodes, n defense nodes, and attacker reward (in that order)
+    trial_data = np.zeros((num_trials,2*args.p+1)) #last dim represents n attack nodes, n defense nodes, and attacker reward (in that order)
     trial_info = {}
     exploration.reset()
-    env = NetworkCascEnv(net_size,p,p,'File',6,filename=topo_fn,cascade_type=args.cascade_type)
+    env = NetworkCascEnv(args.p,args.p,'File',6,filename=topo_fn,cascade_type=args.cascade_type,degree=args.p)
     env.scm.past_results = past_keys
     for j in range(num_trials):
         action = exploration()
@@ -136,14 +137,15 @@ def perform_training_trials(args,topo_fn,past_keys,target_set):
     #     pickle.dump(trial_info,file)
     return trial_data,trial_info,env.scm.past_results
 
-def perform_val_trials(args,topo_fn,train_actions,cycle=False):
-    net_size = args.ego_graph_size
+def perform_val_trials(args,topo_fn,train_actions,cycle=True):
+    G = nx.read_gpickle(topo_fn)
+    net_size = G.number_of_nodes()
     p = 2/net_size
-    env = NetworkCascEnv(net_size,p,p,'File',6,filename=topo_fn,cascade_type=args.cascade_type)
-    all_actions = get_combinatorial_actions(net_size,2)
+    env = NetworkCascEnv(args.p,args.p,'File',6,filename=topo_fn,cascade_type=args.cascade_type,degree=args.p)
+    all_actions = get_combinatorial_actions(net_size,args.p)
     val_actions = []
     if cycle:
-        action_combinations = list(itertools.combinations(all_actions, 2))
+        action_combinations = [(a1,a2) for a1 in all_actions for a2 in all_actions]
         shuffled_combinations = action_combinations.copy()
         random.shuffle(shuffled_combinations)
         break_flag = False
@@ -158,13 +160,19 @@ def perform_val_trials(args,topo_fn,train_actions,cycle=False):
                 if len(val_actions) >= args.max_valset_trials:
                     break
         else:
+            max_samples = 10*args.max_valset_trials
+            count = 0
             while len(val_actions) < args.max_valset_trials:
                 a1 = random.sample(all_actions,k=1)[0]
                 a2 = random.sample(all_actions,k=1)[0]
                 casc = a1 + a2
-                if not np.any(np.all(train_actions == casc, axis=1)):
+                if not np.any(np.all(train_actions == casc, axis=1)) and (a1,a2) not in val_actions:
                     val_actions.append((a1, a2))
                     pbar.update(1)  # Update the progress bar with each iteration
+                count += 1
+                if count > max_samples:
+                    break
+
 
     # for i,a1 in enumerate(all_actions):
     #     for j,a2 in enumerate(all_actions):
@@ -176,7 +184,7 @@ def perform_val_trials(args,topo_fn,train_actions,cycle=False):
     #             break
     #     if break_flag:
     #         break
-    val_trial_data = np.zeros((len(val_actions),5))
+    val_trial_data = np.zeros((len(val_actions),2*args.p+1))
     with tqdm(total=len(val_actions), desc='Validation Trials', unit='iteration') as pbar:
         for j,action in enumerate(val_actions):
             _, reward, _, info = env.step(action)
@@ -212,14 +220,18 @@ def create_dataset(args):
     #generate data for the ego graph
     if args.load_graph_dir is not None:
         data_dir = args.load_graph_dir
+        fn = os.path.join(data_dir,'net_0.gpickle')
+        G = nx.read_gpickle(fn)
+        num_nodes = G.number_of_nodes()
     else:
+        num_nodes = args.ego_graph_size
         eval_method = ''
         if args.calc_nash_ego:
             eval_method += 'NashEQ'
         elif args.max_valset_trials > 0:
             if args.calc_nash_ego: eval_method += '_'
             eval_method +=  f'valtrials_{args.exploration_type}Expl'
-        save_dir = f'{args.top_dir}/{args.ego_graph_size}C2/ego_{eval_method}/'
+        save_dir = f'{args.top_dir}/{num_nodes}/C{args.p}/'
         if not os.path.isdir(save_dir):
             os.makedirs(save_dir)
         elif args.overwrite:
@@ -230,15 +242,15 @@ def create_dataset(args):
             print(f'A dataset with the specified parameters already exists in the directory {save_dir}. If you would like to generate a new one, rename this directory or use the argument --overwrite True.')
             exit()
         data_dir = save_dir
-        create_random_nets(data_dir,args.ego_graph_size,gen_threshes=gen_threshes,num2gen=1)
-    topo_fn = data_dir + 'net_0.edgelist'
+        create_random_nets(data_dir,num_nodes,gen_threshes=gen_threshes,num2gen=1)
+    topo_fn = data_dir + 'net_0.gpickle'
 
     if args.calc_nash_ego:
         nash_eq_dir = data_dir + f'{args.cascade_type}casc_NashEQs/'
         os.makedirs(nash_eq_dir)
         #tic = time.perf_counter()
-        fn = 'net_0.edgelist'
-        f_args = (os.path.join(data_dir,fn),args.cascade_type,nash_eq_dir,args.ego_graph_size)
+        fn = 'net_0.gpickle'
+        f_args = (os.path.join(data_dir,fn),args.cascade_type,nash_eq_dir,num_nodes)
         _gen_utils_eqs(f_args)
 
     #generate action subsets
@@ -250,9 +262,9 @@ def create_dataset(args):
     if not args.overwrite and os.path.exists(save_dir + 'subact_sets.npy'):
         subact_sets = np.load(save_dir + 'subact_sets.npy')
     else:
-        nodes = [i for i in range(args.ego_graph_size)]
+        nodes = [i for i in range(num_nodes)]
         subact_sets = []
-        for i in range(args.num_subact_sets):
+        for i in tqdm(range(args.num_subact_sets),desc='Subset Generation'):
             subset = np.sort(random.sample(nodes,args.num_subact_targets))
             while any(np.array_equal(subset,arr) for arr in subact_sets):
                 subset = np.sort(random.sample(nodes,args.num_subact_targets))
@@ -273,7 +285,7 @@ def create_dataset(args):
     #     fac_data_pbar.update()
     # fac_data_pbar.close()
     from utils import get_combinatorial_actions
-    all_actions = get_combinatorial_actions(args.ego_graph_size,2)
+    all_actions = get_combinatorial_actions(num_nodes,args.p)
     subact_save_name = save_dir + f'subact_{args.cascade_type}casc'
     if not args.overwrite and os.path.exists(f'{subact_save_name}_splitbyset_trialdata.npy') and os.path.exists(f'{subact_save_name}_splitbyset_trialinfo.pkl'):
         print(f'Loading Factual Data from: {subact_save_name}_trialdata.npy')
@@ -297,7 +309,7 @@ def create_dataset(args):
         # chunk_size = len(subset_combinations) // num_chunks
         # chunks = [subset_combinations[i:i+chunk_size] for i in range(0, len(subset_combinations), chunk_size)]
         from functools import partial
-        with Pool(processes=cpu_count()-1) as pool, tqdm(total=len(subact_sets), desc='Fac Data Progress') as pbar:
+        with Pool(processes=4) as pool, tqdm(total=len(subact_sets), desc='Fac Data Progress') as pbar:
             for i, (trial_data, trial_info,trial_keys) in enumerate(pool.imap_unordered(partial(perform_training_trials, args, topo_fn,dict(all_pastkeys)), subact_sets)):
                 shared_allsets_trialdata[i] = trial_data
                 shared_allsets_trialinfo[i] = trial_info
@@ -327,7 +339,7 @@ def create_dataset(args):
         with tqdm(total=len(casc_data), desc='Filtering duplicates in fac data', unit='iteration') as pbar:
             for i,c in enumerate(casc_data):
                 c_tup = tuple(c.astype(int))
-                key = len(all_actions) * all_actions.index((min(c_tup[:2]), max(c_tup[:2]))) + all_actions.index((min(c_tup[2:4]), max(c_tup[2:4])))
+                key = len(all_actions) * all_actions.index(c_tup[:args.p]) + all_actions.index(c_tup[args.p:-1])
                 if key not in casc_keys:
                     casc_keys.add(key)
                     duplicate_bool.append(False)
@@ -365,8 +377,8 @@ def create_dataset(args):
             cfac_trials = np.load(f'{subact_save_name}_CFACtrialdata.npy')
         else:
             #generate counterfactuals from this data
-            p = 2/args.ego_graph_size
-            env = NetworkCascEnv(args.ego_graph_size,p,p,'File',6,filename=topo_fn,cascade_type=args.cascade_type)
+            #p = 2/num_nodes
+            env = NetworkCascEnv(args.p,args.p,'File',6,filename=topo_fn,cascade_type=args.cascade_type,degree=args.p)
             cfac_fns = Counterfactual_Cascade_Fns(env)
             cfac_trials,cfac_info,cfac_data_time = cfac_fns.gen_cross_subset_cfacs(allsets_trialdata,allsets_trialinfo,casc_keys,all_actions,max_ratio=100)
             np.save(save_dir + f'subact_{args.cascade_type}casc_CFACtrialdata.npy',cfac_trials)
@@ -390,6 +402,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='SL Dataset Creation Args')
     parser.add_argument("--ego_graph_size",default=10,type=int,help='Number of nodes in the top level graph.')
+    parser.add_argument("--p",default=2,type=int,help='Number of nodes chosen in an action')
     parser.add_argument("--num_subact_targets",default=5,type=int,help='Number of nodes in the subaction spaces.')
     parser.add_argument("--num_subact_sets",default=10,type=int,help='How many subaction spaces to do trials for.')
     parser.add_argument("--cfda",default=False,type=bool,help='Whether to use CfDA for exploration.')
@@ -400,7 +413,7 @@ if __name__ == '__main__':
     parser.add_argument("--exploration_type",default='RandomCycle',type=str,help="Which exploration strategy to use to gen trials")
     parser.add_argument("--epsilon",default=0.99,type=int,help="Epsilon paramter for CDMExploration.")
     parser.add_argument("--load_graph_dir",default=None,type=str,help='Specifies dir to load ego topology from instead of generating a new one.')
-    parser.add_argument("--top_dir",default='./data/Ego/',type=str,help='Top level directory to store created datsets in')
+    parser.add_argument("--top_dir",default='./data/',type=str,help='Top level directory to store created datsets in')
     parser.add_argument("--overwrite",default=False,type=bool,help='Will not overwrite directory of same name unless this flag is True')
     args = parser.parse_args()
 

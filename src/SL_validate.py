@@ -16,7 +16,7 @@ from marl.model.nn.mlpnet import MultiCriticMlp
 from marl.tools import gymSpace2dim
 
 class Validator():
-	def __init__(self,envs,embedding=None,subact_sets=None,dataset=None,nash_eqs_dir=None,device='cpu',exploiter_model_dir=None,gnn=False):
+	def __init__(self,envs,p=2,embedding=None,subact_sets=None,dataset=None,nash_eqs_dir=None,device='cpu',exploiter_model_dir=None,gnn=False):
 		self.envs = envs
 		self.gnn = gnn
 		#self.embedding = embedding
@@ -24,25 +24,27 @@ class Validator():
 		self.obs_space = envs[0].observation_space
 		self.act_space = envs[0].action_space
 		num_nodes = gymSpace2dim(self.obs_space)[0]
-		self.all_actions = get_combinatorial_actions(num_nodes,2)
+		self.all_actions = get_combinatorial_actions(num_nodes,p)
 		#self.train_set = self.get_validation_set(subact_sets)
 		# if os.path.isdir(nash_eqs_dir):
 		#Get Nash EQs
 		if nash_eqs_dir is not None and os.path.isdir(nash_eqs_dir):
 			fns = [f for f in os.listdir(nash_eqs_dir)]
 			fns.sort()
-			self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'eq' in f]
-			self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if f'util' in f]
+			self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if (f'eq' in f and 'cluster' not in f)]
+			self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if (f'util' in f and 'cluster' not in f)]
 		else:
 			self.nashEQ_policies = []
 			self.utils = []
 
 		if dataset is not None:
 			self.dataset = dataset
-			self.data_loader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=4)
+			if self.dataset.__len__() > 0:
+				self.data_loader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=4)
+			else:
+				self.data_loader = None
 		else:
 			self.data_loader = None
-
 	# def get_validation_set(self,subact_sets):
 	# 	train_set = []
 	# 	for subset in subact_sets:
@@ -90,17 +92,29 @@ class Validator():
 							pred = q_model(actions,node_features,edge_index)
 						else:
 							pred = q_model(actions,node_features)
-						multi_hot_pred = torch.zeros_like(pred)
-						multi_hot_pred[pred > 0.5] = 1
-						pred_reward = torch.mean(multi_hot_pred,dim=1)
+						#multi_hot_pred = torch.zeros_like(pred)
+						#multi_hot_pred[pred > 0.5] = 1
+						pred_reward = torch.mean(pred,dim=1)
 						val_err += np.sum(np.abs((pred_reward-reward).detach().cpu().numpy()))/self.dataset.__len__()
 				#Compare to ground truth utility and NashEQ if available
 				if len(self.nashEQ_policies) > 0:
+					G = self.envs[0].net
+					node_features = torch.tensor([G.nodes[n]['threshold'] for n in range(G.number_of_nodes())])
+					node_features = node_features.to(device)
+					#edge_index = 
 					for i,env in enumerate(self.envs):
 						atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions,device=device)
 						def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions,device=device)
-						atk_pd,atk_Q_val = atk_policy.get_policy(node_features[0],edge_index)
-						def_pd,def_Q_val = def_policy.get_policy(node_features[0],edge_index)
+						if self.gnn:
+							atk_pd,atk_Q_val = atk_policy.get_policy(node_features,edge_index)
+							def_pd,def_Q_val = def_policy.get_policy(node_features,edge_index)
+						else:
+							if True:
+								atk_pd,atk_Q_val = atk_policy.get_policy(node_features)
+								def_pd,def_Q_val = def_policy.get_policy(node_features)
+							else:
+								atk_pd,atk_Q_val = atk_policy.get_large_policy(node_features)
+								def_pd,def_Q_val = def_policy.get_large_policy(node_features)
 						# else:
 						# 	#observation = env.reset(fid=i) #torch.tensor(env.reset(fid=i)[0])
 						# 	#feat_obs = get_featurized_obs([observation],embed_model=embed_model).detach().squeeze().to(device)
@@ -111,30 +125,24 @@ class Validator():
 						# 	def_pd,def_Q_val = def_policy.get_policy(t_obs,feat_actions)
 						impl_policy = np.array([atk_pd,def_pd])
 						best_kl = np.inf
-						#for j,pol in enumerate(self.nashEQ_policies[i]):
 						nashEQ_policy = self.nashEQ_policies[i]
 						reg = np.ones_like(nashEQ_policy.flatten())*1e-6
-						#nash_err = np.abs(nashEQ_policy-impl_policy)
 						kl = entropy(impl_policy.flatten()+reg,nashEQ_policy.flatten()+reg)
-						#kl = np.linalg.norm(nashEQ_policy.flatten()-impl_policy.flatten())
-						# if kl < best_kl: 
-						# 	best_kl = kl
 						nash_eq_divergences.append(kl)
 						err_mat = [atk_Q_val-self.utils[i],def_Q_val+self.utils[i]]
 						err = []
 						#val_err = []
 						#debug_high_err = {}
-						for j, errj in enumerate(err_mat):
-							for k, errk in enumerate(errj):
-								for l,errl in enumerate(errk):
-									abs_errl = np.abs(errl)
-									err.append(abs_errl)
+						#for j, errj in enumerate(err_mat):
+						for k, errk in enumerate(err_mat[1]):
+							for l,errl in enumerate(errk):
+								abs_errl = np.abs(errl)
+								err.append(abs_errl)
 									# if (k,l) not in self.train_set:
 									# 	val_err.append(abs_errl)
 									#if abs_errl > 1 and j == 0:
 									#	debug_high_err[f'{[self.all_actions[k],self.all_actions[l]]}'] = [atk_Q_val[k,l],self.utils[i][k,l]]s
 						util_errs.append(np.mean(err))
-						#val_errs.append(val_err)
 		util_err_ret = np.mean(util_errs) if len(util_errs) > 0 else None
 		nash_div_ret = np.mean(nash_eq_divergences) if len(nash_eq_divergences) > 0 else None
 		return val_err,util_err_ret,nash_div_ret

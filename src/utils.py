@@ -4,10 +4,60 @@ import networkx as nx
 import random
 import time
 import copy
+import sys
 
 #Config Globals
 K = 2.422
 RANDOM_REWIRE_PROB = 0.0
+
+def create_toy_nets(save_dir,num_clusters,nodes_per_cluster,show=False):
+    cluster_sizes = [500,400,300]
+    #cluster_sizes = [nodes_per_cluster for n in range(num_clusters)]
+    #cluster_sizes = np.round(np.random.uniform(nodes_per_cluster*0.5, nodes_per_cluster*1.5, num_clusters)).astype(int)
+    G = nx.Graph()
+    G.add_node(0,threshold=1)
+    node_count = 1
+    node_to_cluster = [-1]
+    for i,cluster_size in enumerate(cluster_sizes):
+        #create a fully connected cluster of nodes
+        cluster = [node_count+j for j in range(cluster_size)]
+        node_to_cluster.extend([i for _ in range(cluster_size)])
+        G.add_nodes_from(cluster,threshold=1/(cluster_size-1))
+        # create edges between each pair of nodes in the cluster
+        G.add_edges_from([(node1, node2) for node1 in cluster for node2 in cluster if node1 != node2])
+        # connect one node from the cluster to the hub node
+        hub_node = cluster[0]
+        G.nodes[hub_node]['threshold'] = 2/(cluster_size)
+        G.add_edge(0, hub_node)
+        node_count += cluster_size
+
+    if save_dir != '':
+        f = save_dir + f'toynet_{num_clusters}c_{nodes_per_cluster}n.gpickle'
+        nx.write_gpickle(G,f)
+    #if show:
+        # from pyvis.network import Network
+        # 
+        # #print('Showing one of the generated networks')
+        # net = Network()
+        # print('before from_nx')
+        # net.from_nx(G)
+        # print('after from_nx')
+        # for node in net.nodes:
+        #     print(node)
+        #     node['color'] = colors[node_to_cluster[node['id'] % len(colors)]]
+        # net.show("graph.html")
+    if show:
+        #print('Showing one of the generated networks')
+        import matplotlib.pyplot as plt
+        pos = nx.spring_layout(G, k=.25, iterations=30)
+        #pos = nx.spectral_layout(G)
+        colors = ['red', 'green', 'blue', 'yellow', 'purple', 'orange','white']
+        node_colors = [colors[node_to_cluster[n]] for n in range(G.number_of_nodes())]
+        nx.draw_networkx_nodes(G,pos,node_color=node_colors,edgecolors='black')
+        nx.draw_networkx_edges(G, pos)
+        plt.draw()
+        plt.show()
+
 
 def create_random_nets(save_dir,num_nodes,num2gen=10,gen_threshes=False,show=False):  
     #import random
@@ -126,7 +176,7 @@ def ncr(n, r):
 
 def get_combinatorial_actions(total_nodes,num_nodes_chosen):
     if num_nodes_chosen == 1:
-        return [i for i in range(total_nodes)]
+        return [tuple([i]) for i in range(total_nodes)]
     #Note: currently only works for num_nodes_chosen = 2
     num_actions = ncr(total_nodes,num_nodes_chosen)
     curr_action = [i for i in range(num_nodes_chosen)]
@@ -157,7 +207,6 @@ def get_rtmixed_nash(env,targeted_policy,random_policy):
     def_policy = copy.deepcopy(random_policy)
     rewards = []
     for j in range(num_data):
-        obs = env.reset()
         action = [atk_policy([obs])[0],def_policy([obs])[0]]
         _,reward,_,_ = env.step(action)
         rewards.append(reward[0])
@@ -167,7 +216,6 @@ def get_rtmixed_nash(env,targeted_policy,random_policy):
     def_policy = copy.deepcopy(targeted_policy)
     rewards = []
     for j in range(num_data):
-        obs = env.reset()
         action = [atk_policy([obs])[0],def_policy([obs])[0]]
         _,reward,_,_ = env.step(action)
         rewards.append(reward[0])
@@ -177,7 +225,6 @@ def get_rtmixed_nash(env,targeted_policy,random_policy):
     def_policy = copy.deepcopy(random_policy)
     rewards = []
     for j in range(num_data):
-        obs = env.reset()
         action = [atk_policy([obs])[0],def_policy([obs])[0]]
         _,reward,_,_ = env.step(action)
         rewards.append(reward[0])
@@ -195,3 +242,54 @@ def get_rtmixed_nash(env,targeted_policy,random_policy):
     toc = time.perf_counter()
     print(f'Finished in {toc-tic} seconds')
     return p_atk,p_def
+
+if __name__ == '__main__':
+    trainset = np.load('data/12/C2/1sets_12targets_4356trials_RandomCycleExpl/subact_thresholdcasc_trialdata.npy')
+    util = np.load('data/12/C2/thresholdcasc_NashEQs/thresholdCasc_net_0_d2_util.npy')
+    from netcasc_gym_env import NetworkCascEnv
+
+    fn = 'data/12/C2/net_0.gpickle'
+    p = 2
+    all_actions = get_combinatorial_actions(12,p)
+    env = NetworkCascEnv(p,p,'File',6,filename=fn,cascade_type='threshold',degree=p)
+    obs = env.reset()
+    for d in trainset:
+        aa = tuple(int(i) for i in d[:p])
+        da = tuple(int(i) for i in d[p:-1])
+        rd = d[-1]
+        ai = all_actions.index(aa)
+        di = all_actions.index(da)
+        ru = util[ai,di]
+        _,rn,_,_ = env.step([aa,da])
+        if rd != ru:
+            print(f'ai: {ai}')
+            print(f'di: {di}')
+            print(f'rd: {rd}')
+            print(f'ru: {ru}')
+            print(f'rn: {rn[0]}')
+
+
+    # graph_dir = 'graphs/toynets/'
+    # graph = 'toynet_3c_10n'
+    # graph_path = f'{graph_dir}{graph}.gpickle'
+    # G = nx.read_gpickle(graph_path)
+    # num_nodes = G.number_of_nodes()
+    # all_actions = get_combinatorial_actions(num_nodes,1)
+    # rtmixed_fn = f'{graph_dir}/eqs/{graph}.np'
+
+    # from netcasc_gym_env import NetworkCascEnv
+    # env = NetworkCascEnv(num_nodes,1,1,'File',embed_size=6,degree=2,filename=graph_path)
+    # act_sp = env.action_space
+
+    # sys.path.append('./marl/')
+    # from marl.policy.policies import RandomPolicy,TargetedPolicy,RTMixedPolicy
+    # random_policy = RandomPolicy(act_sp,all_actions= all_actions)
+    # targeted_policy = TargetedPolicy(act_sp,all_actions=all_actions)
+    # obs = env.reset()
+    # pt_atk,pt_def = get_rtmixed_nash(env,targeted_policy,random_policy)
+    # print(f'Attack Targeted %: {pt_atk*100}%')
+    # print(f'Defense Targeted %: {pt_def*100}%')
+
+    # np.save(rtmixed_fn,(pt_atk,pt_def))
+
+    #create_toy_nets('data/toynets/',3,100,show=True)

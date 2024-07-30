@@ -2,7 +2,7 @@ import random
 import numpy as np
 
 class RandomExploration(object):
-    def __init__(self,target_set):
+    def __init__(self,target_set,p=2):
         self.target_set = target_set
 
     def reset(self):
@@ -12,17 +12,20 @@ class RandomExploration(object):
         pass
 
     def __call__(self):
-        atk_action = np.random.choice(self.target_set,2,replace=False)
-        def_action = np.random.choice(self.target_set,2,replace=False)
+        atk_action = np.random.choice(self.target_set,p,replace=False)
+        def_action = np.random.choice(self.target_set,p,replace=False)
         action = [list(atk_action),list(def_action)]
         return action
 
 class SLExploration(object): #general SL exploration class
-    def __init__(self,target_set):
-        all_combinations = []
-        for i in range(len(target_set)):
-            for j in range(i + 1, len(target_set)):
-                all_combinations.append((min(target_set[i], target_set[j]), max(target_set[i], target_set[j])))
+    def __init__(self,target_set,p=2):
+        from itertools import combinations
+        all_combinations = list(combinations(target_set,p))
+        #self.all_actions
+        # all_combinations = []
+        # for i in range(len(target_set)):
+        #     for j in range(i + 1, len(target_set)):
+        #         all_combinations.append((min(target_set[i], target_set[j]), max(target_set[i], target_set[j])))
         self.all_actions = [[c1,c2] for c1 in all_combinations for c2 in all_combinations]
 
     def reset(self):
@@ -35,8 +38,8 @@ class SLExploration(object): #general SL exploration class
         raise NotImplementedError
 
 class RandomCycleExploration(SLExploration): 
-    def __init__(self,target_set):
-        super().__init__(target_set)
+    def __init__(self,target_set,p=2):
+        super().__init__(target_set,p)
         self.order = self.all_actions[:]
         random.shuffle(self.order)
         self.index = 0
@@ -53,7 +56,7 @@ class RandomCycleExploration(SLExploration):
         return self.order[i] 
 
 class CDMExploration(SLExploration): 
-    def __init__(self,target_set,eps=0.99):
+    def __init__(self,target_set,p=2,eps=0.99):
         super().__init__(target_set)
         self.n_items = len(target_set)
         self.count_atk = [0 for _ in range(self.n_items)]
