@@ -25,6 +25,7 @@ class NetworkCascEnv(gym.Env):
         self.topo_count = 0
         immunization = False
         self.immunization = immunization
+
         if self.network_type == 'File' and filename is not None:
             if isinstance(self.filename,str):
                 self.net = nx.read_gpickle(self.filename) 

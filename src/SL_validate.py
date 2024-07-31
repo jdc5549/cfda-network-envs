@@ -3,16 +3,17 @@ import sys
 import numpy as np
 import torch
 import torch.nn as nn
+import itertools
 
 from scipy.stats import entropy
 from torch.utils.data import DataLoader
 
-from utils import get_combinatorial_actions
+from utils import get_combinatorial_actions, ncr
 from graph_embedding import get_featurized_obs
 from NetCascDataset import NetCascDataset
 sys.path.append('./marl/')
 from marl.policy import MinimaxQCriticPolicy,SubactMinimaxQCriticPolicy
-from marl.model.nn.mlpnet import MultiCriticMlp
+from models import MLP_Critic
 from marl.tools import gymSpace2dim
 
 class Validator():
@@ -24,6 +25,7 @@ class Validator():
 		self.obs_space = envs[0].observation_space
 		self.act_space = envs[0].action_space
 		num_nodes = gymSpace2dim(self.obs_space)[0]
+		self.p = p
 		self.all_actions = get_combinatorial_actions(num_nodes,p)
 		#self.train_set = self.get_validation_set(subact_sets)
 		# if os.path.isdir(nash_eqs_dir):
@@ -99,7 +101,8 @@ class Validator():
 				#Compare to ground truth utility and NashEQ if available
 				if len(self.nashEQ_policies) > 0:
 					G = self.envs[0].net
-					node_features = torch.tensor([G.nodes[n]['threshold'] for n in range(G.number_of_nodes())])
+					num_nodes = G.number_of_nodes()
+					node_features = torch.tensor([G.nodes[n]['threshold'] for n in range(num_nodes)])
 					node_features = node_features.to(device)
 					#edge_index = 
 					for i,env in enumerate(self.envs):
@@ -115,34 +118,51 @@ class Validator():
 							else:
 								atk_pd,atk_Q_val = atk_policy.get_large_policy(node_features)
 								def_pd,def_Q_val = def_policy.get_large_policy(node_features)
-						# else:
-						# 	#observation = env.reset(fid=i) #torch.tensor(env.reset(fid=i)[0])
-						# 	#feat_obs = get_featurized_obs([observation],embed_model=embed_model).detach().squeeze().to(device)
-						# 	feat_actions = self.embedding.embed_action(torch.tensor([action for action in self.all_actions])).float().to(device)
-						# 	#t_obs = torch.mean(feat_obs,axis=0)
-						# 	t_obs = feat_topo.unsqueeze(0).unsqueeze(0).repeat(len(self.all_actions),len(self.all_actions),1)
-						# 	atk_pd,atk_Q_val = atk_policy.get_policy(t_obs,feat_actions)
-						# 	def_pd,def_Q_val = def_policy.get_policy(t_obs,feat_actions)
-						impl_policy = np.array([atk_pd,def_pd])
-						best_kl = np.inf
 						nashEQ_policy = self.nashEQ_policies[i]
+						base_policy = np.array([atk_pd,def_pd])
+						bp_size = len(base_policy[0].flatten())
+						neq_size = len(nashEQ_policy[0].flatten())
+						#RCR
+						if len(nashEQ_policy[0].flatten()) == bp_size:
+							impl_policy = base_policy
+						else:
+							RCR_sizes = [ncr(num_nodes,i) for i in range(1,5)]
+							if neq_size in RCR_sizes:
+								k = RCR_sizes.index(neq_size)+1
+							else:
+								print('Could not identify RCR m.')
+								exit()
+							km_ratio = int(k/args.p)
+							impl_policy = []
+							for bp in base_policy:
+								for combo in itertools.combinations(base_policy[0], km_ratio):
+									# Calculate the product of probabilities for the current combination
+									joint_prob = np.prod(combo)
+									# Append the joint probability to the list
+									impl_policy.append(joint_prob)
+							# Convert the list to a np.array
+							impl_policy = np.array(impl_policy)
+							impl_policy = np.reshape(impl_policy,(2,-1))
+
+						best_kl = np.inf
 						reg = np.ones_like(nashEQ_policy.flatten())*1e-6
 						kl = entropy(impl_policy.flatten()+reg,nashEQ_policy.flatten()+reg)
 						nash_eq_divergences.append(kl)
-						err_mat = [atk_Q_val-self.utils[i],def_Q_val+self.utils[i]]
-						err = []
-						#val_err = []
-						#debug_high_err = {}
-						#for j, errj in enumerate(err_mat):
-						for k, errk in enumerate(err_mat[1]):
-							for l,errl in enumerate(errk):
-								abs_errl = np.abs(errl)
-								err.append(abs_errl)
-									# if (k,l) not in self.train_set:
-									# 	val_err.append(abs_errl)
-									#if abs_errl > 1 and j == 0:
-									#	debug_high_err[f'{[self.all_actions[k],self.all_actions[l]]}'] = [atk_Q_val[k,l],self.utils[i][k,l]]s
-						util_errs.append(np.mean(err))
+						if self.utils[i].shape == atk_Q_val.shape:
+							err_mat = [atk_Q_val-self.utils[i],def_Q_val+self.utils[i]]
+							err = []
+							#val_err = []
+							#debug_high_err = {}
+							#for j, errj in enumerate(err_mat):
+							for k, errk in enumerate(err_mat[1]):
+								for l,errl in enumerate(errk):
+									abs_errl = np.abs(errl)
+									err.append(abs_errl)
+										# if (k,l) not in self.train_set:
+										# 	val_err.append(abs_errl)
+										#if abs_errl > 1 and j == 0:
+										#	debug_high_err[f'{[self.all_actions[k],self.all_actions[l]]}'] = [atk_Q_val[k,l],self.utils[i][k,l]]s
+							util_errs.append(np.mean(err))
 		util_err_ret = np.mean(util_errs) if len(util_errs) > 0 else None
 		nash_div_ret = np.mean(nash_eq_divergences) if len(nash_eq_divergences) > 0 else None
 		return val_err,util_err_ret,nash_div_ret
@@ -152,14 +172,18 @@ if __name__ == '__main__':
 	import argparse
 	parser = argparse.ArgumentParser(description='Netcasc SL Training Args')
 	parser.add_argument("--data_dir",default=None,type=str,help='Directory to load data from.')
+	parser.add_argument("--p",default=2,type=int,help='Number of nodes chosen by attacker/defender.')
 	parser.add_argument("--q_model_path",default=None,type=str,help='Path of q_model to evaluate.')
 	parser.add_argument("--net_size",default=5,type=int,help='Number of nodes in network.')
 	parser.add_argument("--cascade_type",default='threshold',type=str,help='Type of cascading dynamics.')
-	parser.add_argument("--mlp_hidden_size",default=64,type=int,help='Size of hidden layers in MLP')
+	parser.add_argument("--mlp_hidden_size",default=256,type=int,help='Size of hidden layers in MLP')
+	parser.add_argument("--embed_size",default=16,type=int,help='Size of hidden layers in MLP')
+	parser.add_argument("--mlp_hidden_depth",default=2,type=int,help='Size of hidden layers in MLP')
+
 	args = parser.parse_args()
 
-	p = 2/args.net_size
-	topology_dir = args.data_dir + 'topologies/'
+
+	topology_fn = args.data_dir + 'net_0.gpickle'
 	nash_eqs_dir = args.data_dir + 'thresholdcasc_NashEQs/'
 
 	val_data_path = args.data_dir + f'{args.cascade_type}casc_trialdata.npy'
@@ -167,16 +191,14 @@ if __name__ == '__main__':
 		val_dataset = NetCascDataset(args.data_dir,args.cascade_type)
 	else: 
 		val_dataset = None
-	from network_gym_env import NetworkCascEnv
-	test_envs = [NetworkCascEnv(args.net_size,p,p,'File',cascade_type=args.cascade_type,
-				filename = os.path.join(topology_dir,f)) for f in os.listdir(topology_dir) if 'thresh' not in f]
-	V = Validator(test_envs,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir)
+	from netcasc_gym_env import NetworkCascEnv
+	test_env = NetworkCascEnv(args.p,args.p,'File',cascade_type=args.cascade_type,filename=topology_fn,degree=args.p)
+	V = Validator([test_env],p=args.p,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir)
 
-	embed_size = 7
-	q_model = MultiCriticMlp(embed_size,embed_size*2,embed_size*2,hidden_size=args.mlp_hidden_size)
+	q_model = MLP_Critic(args.embed_size,args.mlp_hidden_size,args.net_size,num_node_features=args.net_size,p=args.p,num_mlp_layers=args.mlp_hidden_depth)
 	q_model.load_state_dict(torch.load(args.q_model_path))
 	q_model.eval()
 
 	test_err,util_err,nash_div = V.validate(q_model)
-	print(util_err)
+	#print(util_err)
 	print(nash_div)
