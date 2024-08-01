@@ -84,6 +84,12 @@ if __name__ == '__main__':
 			#print(f'Input Size: {args.embed_size+num_nodes}')
 			print(f'Number of Model parameters: {sum(p.numel() for p in q_model.parameters())}')	
 			q_model.to(device)
+		# elif args.gnn_model == 'GIN':
+		# 	from models import GIN_Critic
+		# 	q_model = GAT_Critic(args.embed_size,args.mlp_hidden_size,num_nodes)
+		# 	print(f'Dataset Size: {dataset.__len__()}')
+		# 	#print(f'Input Size: {args.embed_size+num_nodes}')
+		# 	print(f'Number of Model parameters: {sum(p.numel() for p in q_model.parameters())}')
 		else:
 			print(f'GNN model {args.gnn_model} not recognized.')
 			exit()

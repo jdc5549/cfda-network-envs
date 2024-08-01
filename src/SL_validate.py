@@ -13,7 +13,7 @@ from graph_embedding import get_featurized_obs
 from NetCascDataset import NetCascDataset
 sys.path.append('./marl/')
 from marl.policy import MinimaxQCriticPolicy,SubactMinimaxQCriticPolicy
-from models import MLP_Critic
+from models import MLP_Critic, GCN_Critic, GAT_Critic
 from marl.tools import gymSpace2dim
 
 class Validator():
@@ -104,7 +104,7 @@ class Validator():
 					num_nodes = G.number_of_nodes()
 					node_features = torch.tensor([G.nodes[n]['threshold'] for n in range(num_nodes)])
 					node_features = node_features.to(device)
-					#edge_index = 
+					edge_index = from_networkx(G).edge_index
 					for i,env in enumerate(self.envs):
 						atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions,device=device)
 						def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions,device=device)
@@ -176,15 +176,17 @@ if __name__ == '__main__':
 	parser.add_argument("--q_model_path",default=None,type=str,help='Path of q_model to evaluate.')
 	parser.add_argument("--net_size",default=5,type=int,help='Number of nodes in network.')
 	parser.add_argument("--cascade_type",default='threshold',type=str,help='Type of cascading dynamics.')
-	parser.add_argument("--mlp_hidden_size",default=256,type=int,help='Size of hidden layers in MLP')
-	parser.add_argument("--embed_size",default=16,type=int,help='Size of hidden layers in MLP')
-	parser.add_argument("--mlp_hidden_depth",default=2,type=int,help='Size of hidden layers in MLP')
+	#parser.add_argument("--mlp_hidden_size",default=64,type=int,help='Size of hidden layers in MLP')
+	#parser.add_argument("--embed_size",default=16,type=int,help='Size of hidden layers in MLP')
+	parser.add_argument("--ego_model_type",default='MLP',type=str,help='Type of NN model.')
+	#parser.add_argument("--mlp_hidden_depth",default=2,type=int,help='Size of hidden layers in MLP')
 
 	args = parser.parse_args()
-
-
+	device = 'cpu'
 	topology_fn = args.data_dir + 'net_0.gpickle'
 	nash_eqs_dir = args.data_dir + 'thresholdcasc_NashEQs/'
+	import networkx as nx
+	G = nx.read_gpickle(topology_fn)
 
 	val_data_path = args.data_dir + f'{args.cascade_type}casc_trialdata.npy'
 	if val_data_path is not None and os.path.isfile(val_data_path):
@@ -193,12 +195,32 @@ if __name__ == '__main__':
 		val_dataset = None
 	from netcasc_gym_env import NetworkCascEnv
 	test_env = NetworkCascEnv(args.p,args.p,'File',cascade_type=args.cascade_type,filename=topology_fn,degree=args.p)
-	V = Validator([test_env],p=args.p,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir)
 
-	q_model = MLP_Critic(args.embed_size,args.mlp_hidden_size,args.net_size,num_node_features=args.net_size,p=args.p,num_mlp_layers=args.mlp_hidden_depth)
-	q_model.load_state_dict(torch.load(args.q_model_path))
+	state_dict = torch.load(args.q_model_path)
+	if args.ego_model_type == 'MLP':
+		embed_size = state_dict['act_embedding.weight'].shape[1]
+		hidden_size = state_dict['mlp_layers.0.weight'].shape[0]
+		output_size = state_dict['output_layer.weight'].shape[0]
+		depth = int(len([key for key in state_dict if 'mlp_layers' in key])/2)
+		q_model = MLP_Critic(embed_size,hidden_size,output_size,num_mlp_layers=depth)
+		edge_index = None
+		gnn = False
+	elif args.ego_model_type == 'GCN':
+		embed_size = state_dict['convs.0.lin.weight'].shape[0]
+		hidden_size = state_dict['mlp_layers.0.weight'].shape[0]
+		output_size = state_dict['output_layer.weight'].shape[0]
+		depth = int(len([key for key in state_dict if 'mlp_layers' in key])/2)
+		q_model = GCN_Critic(embed_size,hidden_size,output_size,num_mlp_layers=depth)
+		from torch_geometric.utils import from_networkx
+		edge_index = from_networkx(G).edge_index
+		gnn = True
+	V = Validator([test_env],p=args.p,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir,gnn=gnn)
+
+	#q_model = MLP_Critic(embed_size,hidden_size,args.net_size,num_node_features=args.net_size,p=args.p,num_mlp_layers=depth)
+	q_model.load_state_dict(state_dict)
+	q_model.to(device)
 	q_model.eval()
 
 	test_err,util_err,nash_div = V.validate(q_model)
-	#print(util_err)
+	print(util_err)
 	print(nash_div)
