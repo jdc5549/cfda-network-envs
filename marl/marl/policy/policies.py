@@ -57,11 +57,54 @@ class TargetedPolicy(Policy):
     :param model: (Model or torch.nn.Module) The q-value model 
     :param action_space: (gym.Spaces) The action space
     """
-    def __init__(self, action_space,num_actions=1,all_actions=[]):
+    def __init__(self, action_space,node_ranking='degree_centrality',num_actions=1,all_actions=[]):
         self.action_space = action_space
         self.num_actions=num_actions
         self.all_actions = all_actions
+        self.node_rank_alg = node_ranking
+
+
+    def get_TOPSIS_vals(self,G):
+        import networkx.algorithms.centrality as central
+        num_nodes = G.number_of_nodes()
+        degree_centrality = central.degree_centrality(G)
+        closeness_centrality = central.closeness_centrality(G)
+        betweenness_centrality = central.betweenness_centrality(G)
+        eigenvector_centrality = central.eigenvector_centrality(G)
         
+        # Combine centrality measures into a matrix
+        centrality_matrix = np.array([
+            list(degree_centrality.values()),
+            list(closeness_centrality.values()),
+            list(betweenness_centrality.values()),
+            list(eigenvector_centrality.values())
+        ]).T
+        
+        # Normalize the centrality measures
+        norm_centrality_matrix = centrality_matrix / np.linalg.norm(centrality_matrix)
+        
+        # Calculate the weighted normalized decision matrix
+        P = norm_centrality_matrix / norm_centrality_matrix.sum(axis=0)
+        entropy = -np.sum(P * np.log(P + 1e-9), axis=0) / np.log(num_nodes)
+        weights = (1 - entropy) / (4 - np.sum(entropy))        
+        #weighted_norm_matrix = norm_centrality_matrix * weights
+        
+        # Determine positive and negative ideal solutions
+        positive_ideal_solution = norm_centrality_matrix.max(axis=0)
+        negative_ideal_solution = norm_centrality_matrix.min(axis=0)
+        
+        # Calculate separation measures
+        separation_positive = np.sqrt((weights*(norm_centrality_matrix - positive_ideal_solution) ** 2).sum(axis=1))
+        separation_negative = np.sqrt((weights*(norm_centrality_matrix - negative_ideal_solution) ** 2).sum(axis=1))
+        
+        # Calculate relative closeness to the ideal solution
+        relative_closeness = separation_negative / (separation_positive + separation_negative)
+        
+        # Create a dictionary to map nodes to their relative closeness values
+        node_importance = {node: relative_closeness[i] for i, node in enumerate(G.nodes())}
+        
+        return node_importance
+
     def __call__(self, state,num_actions=1):
         """
         Return the highest degree nodes
@@ -72,10 +115,16 @@ class TargetedPolicy(Policy):
         actions_list = []
         for j in range(len(state)):
             G = nx.from_numpy_matrix(state[j][:-1])
-            node_degrees = [G.degree(n) for n in G.nodes]
-            #act_degrees = [node_degrees[act[0]] + node_degrees[act[1]] for act in self.all_actions]
-            act_degrees = [np.sum([node_degrees[act[i]] for i in range(comb_size)]) for act in self.all_actions]
-            self.sorted_idx = np.flip(np.argsort(act_degrees))
+            if self.node_rank_alg == 'degree_centrality':
+                node_vals = [G.degree(n) for n in G.nodes]
+            elif self.node_rank_alg == 'TOPSIS':
+                node_vals = self.get_TOPSIS_vals(G)
+            else:
+                raise ValueError(f'Node Ranking algorithm {self.node_rank_alg} not recognized')
+
+            act_vals = [np.sum([node_vals[act[i]] for i in range(comb_size)]) for act in self.all_actions]
+            self.sorted_idx = np.flip(np.argsort(act_vals))
+
             sorted_acts = [self.all_actions[idx] for idx in self.sorted_idx]
             actions = sorted_acts[:num_actions]
             if len(actions) > 1:
@@ -418,15 +467,25 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
     :param observation_space: (gym.Spaces) The observation space
     :param action_space: (gym.Spaces) The action space
     """
-    def __init__(self, model, action_space = None,player=0,all_actions=[],eval_mode=False,device='cpu',model_path=None):
+    def __init__(self, model, action_space = None,player=0,all_actions=[],eval_mode=False,device='cpu',model_path=None,cluster_map=None):
         self.action_space = action_space
         self.model = model
         self.player = player
         self.all_actions = all_actions
+        self.cluster_map = cluster_map
+        if self.cluster_map is not None:
+            p = len(self.all_actions[0])
+            num_clusters = int(max(cluster_map)+1)
+            pairs_zero = [[-1,n] for n in range(num_clusters)]
+            same_pairs = [[n,n] for n in range(num_clusters)]
+            wrong_cluster_combs = pairs_zero + same_pairs
+            cluster_combs = get_combinatorial_actions(num_clusters,p)
+            self.cluster_actions = cluster_combs + wrong_cluster_combs
+
         self.max_size_in_mem = 250000
         self.device = device
         #if len(all_actions)*len(all_actions) > self.max_size_in_mem:
-        self.action_indices = torch.tensor([i for i in range(len(self.all_actions))]).to(torch.long).to(self.device)
+        self.action_indices = torch.tensor([i for i in range(len(self.all_actions))]).to(torch.int).to(self.device)
         #else:
         #    self.action_indices = torch.tensor([i for i in range(len(self.all_actions))]).to(torch.long).to(device)
         self.eval_mode = eval_mode
@@ -438,6 +497,75 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
         else:
             self.policy = None
 
+    def get_toy_policy(self,node_features=None,edge_index=None): 
+        num_player_actions = gymSpace2dim(self.action_space)
+        num_p1_acts = gymSpace2dim(self.action_space)
+        num_p2_acts = gymSpace2dim(self.action_space)
+        if edge_index is not None:
+            expanded_features = node_features.repeat(self.action_indices.shape[0]*self.action_indices.shape[0],1).unsqueeze(1)
+            edge_index = edge_index.unsqueeze(0)
+            edge_index = edge_index.repeat(self.action_indices.shape[0]*self.action_indices.shape[0],1,1)
+            #expand actions to multi-hot for GNN
+            multi_hot_actions = torch.zeros(self.action_indices.shape[0]*self.action_indices.shape[0],node_features.shape[-1],2)
+            for i,aa in enumerate(self.all_actions):
+                for j,dd in enumerate(self.all_actions):
+                    multi_hot_actions[i*len(self.all_actions)+j,aa,0] = 1
+                    multi_hot_actions[i*len(self.all_actions)+j,dd,1] = 1
+            multi_hot_actions = multi_hot_actions.to(self.device)
+            out = torch.squeeze(self.Q(multi_hot_actions,expanded_features,edge_index)).detach()*(-2*self.player +1)
+            out = out.reshape(self.action_indices.shape[0],self.action_indices.shape[0],-1)
+        else:
+            if node_features is None:
+                expanded_features = None
+            else:
+                expanded_features = node_features.unsqueeze(0)
+                expanded_features = expanded_features.half().repeat(self.action_indices.shape[0],self.action_indices.shape[0],1)
+                #expanded_features = expanded_features.unsqueeze(2)
+            grid_p1,grid_p2 = torch.meshgrid(self.action_indices,self.action_indices)
+            actions = torch.stack((grid_p1,grid_p2),dim=-1)
+            out = torch.squeeze(self.Q(actions,expanded_features)).detach()*(-2*self.player +1)           
+        U_full = torch.mean(out,dim=-1).cpu().numpy()
+        num_cluster_acts = len(self.cluster_actions)
+        #convert full action space Utility to cluster space Utility
+        U_cluster = np.zeros((num_cluster_acts,num_cluster_acts))
+        U_counts = np.zeros((num_cluster_acts,num_cluster_acts))
+
+        for i in range(num_player_actions):
+            for j in range(num_player_actions):
+                aa = self.all_actions[i]
+                da = self.all_actions[j]
+                aa_cluster = sorted([self.cluster_map[a] for a in aa])
+                da_cluster = sorted([self.cluster_map[d] for d in da])
+                aci = self.cluster_actions.index(aa_cluster)
+                dci = self.cluster_actions.index(da_cluster)
+                U_counts[aci,dci] += 1
+                U_cluster[aci,dci] = U_cluster[aci,dci] * (U_counts[aci,dci]-1)/U_counts[aci,dci] + U_full[i,j]/U_counts[aci,dci]
+        c = np.zeros(num_cluster_acts+1)
+        c[num_cluster_acts] = -1
+        if self.player == 0:
+            U_calc = -U_cluster.T #LP package requires the player to be the column player
+        else:
+            U_calc = -U_cluster
+        A_ub = np.hstack((U_calc,np.ones((num_cluster_acts,1))))
+        b_ub = np.zeros(num_cluster_acts)
+        A_eq = np.ones((1,num_cluster_acts+1))
+        A_eq[:,num_cluster_acts] = 0
+        b_eq = 1
+        bounds = [(0,None) for i in range(num_cluster_acts+1)]
+        bounds[num_cluster_acts] = (None,None)
+        options = {'maxiter': 1000,'tol': 1e-6,'presolve': True,'autoscale':True}
+        res = linprog(c,A_ub=A_ub,b_ub=b_ub,A_eq=A_eq,b_eq=b_eq,bounds=bounds,options=options)
+
+        if not res["success"]:
+            print("Failed to Optimize LP with exit status ",res["status"])
+        value = res["fun"]
+        policy = res["x"][0:num_cluster_acts]
+        # print('policy: ', policy)
+        # if self.player == 1:
+        #     exit()
+        return policy,U_cluster
+
+
     def get_large_policy(self,node_features=None,edge_index=None):
         import os
         num_player_actions = gymSpace2dim(self.action_space)
@@ -445,6 +573,9 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
         num_p2_acts = gymSpace2dim(self.action_space)
         expanded_features = node_features.repeat(num_p1_acts,1)
         U_player = np.zeros(len(self.all_actions))
+        if edge_index is not None:
+            edge_index = edge_index.unsqueeze(0)
+            edge_index = edge_index.repeat(num_p1_acts,1,1)
         with tqdm(total=len(self.action_indices),desc=f'Player {self.player} Ego Policy Progress') as pbar:
             for a in range(len(self.all_actions)):
                 if self.player == 0:
@@ -462,6 +593,8 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
         return policy, U_player
  
     def get_policy(self,node_features=None,edge_index=None):
+        if self.cluster_map is not None:
+            return self.get_toy_policy(node_features,edge_index)
         #print('t_obs in get_policy:', state)
         num_player_actions = gymSpace2dim(self.action_space)
         num_p1_acts = gymSpace2dim(self.action_space)
@@ -513,7 +646,8 @@ class SubactMinimaxQCriticPolicy(ModelBasedPolicy):
         b_eq = 1
         bounds = [(0,None) for i in range(num_player_actions+1)]
         bounds[num_player_actions] = (None,None)
-        res = linprog(c,A_ub=A_ub,b_ub=b_ub,A_eq=A_eq,b_eq=b_eq,bounds=bounds,options={'maxiter': 1000,'tol': 1e-6})
+        options = {'maxiter': 1000,'tol': 1e-6,'presolve': True,'autoscale':True}
+        res = linprog(c,A_ub=A_ub,b_ub=b_ub,A_eq=A_eq,b_eq=b_eq,bounds=bounds,options=options)
 
         if not res["success"]:
             print("Failed to Optimize LP with exit status ",res["status"])

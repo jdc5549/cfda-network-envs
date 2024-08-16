@@ -5,15 +5,29 @@ import random
 import time
 import copy
 import sys
+from tqdm import tqdm
 
 #Config Globals
 K = 2.422
 RANDOM_REWIRE_PROB = 0.0
 
+
+def get_toy_clusters(G):
+    num_nodes = G.number_of_nodes()
+    node_map = np.zeros(num_nodes)
+    node_map[0] = -1
+
+    for i,gate_node in enumerate(G.neighbors(0)):
+        node_map[gate_node] = i
+        for cluster_node in G.neighbors(gate_node):
+            if cluster_node != 0:
+                node_map[cluster_node] = i
+    return node_map
+
 def create_toy_nets(save_dir,num_clusters,nodes_per_cluster,show=False):
-    cluster_sizes = [500,400,300]
+    #cluster_sizes = [500,400,300]
     #cluster_sizes = [nodes_per_cluster for n in range(num_clusters)]
-    #cluster_sizes = np.round(np.random.uniform(nodes_per_cluster*0.5, nodes_per_cluster*1.5, num_clusters)).astype(int)
+    cluster_sizes = np.round(np.random.uniform(nodes_per_cluster*0.5, nodes_per_cluster*1.5, num_clusters)).astype(int)
     G = nx.Graph()
     G.add_node(0,threshold=1)
     node_count = 1
@@ -198,7 +212,7 @@ def get_combinatorial_actions(total_nodes,num_nodes_chosen):
 def get_rtmixed_nash(env,targeted_policy,random_policy):
     print('Getting NashEQ for RTMixed Benchmark Strategy')
     tic = time.perf_counter()
-    num_data = 1000
+    num_data = 100
     p_atk = 0 #np.zeros(len(envs))
     p_def = 0 #np.zeros(len(envs))
     #for i,env in enumerate(envs):
@@ -206,7 +220,7 @@ def get_rtmixed_nash(env,targeted_policy,random_policy):
     atk_policy = copy.deepcopy(targeted_policy)
     def_policy = copy.deepcopy(random_policy)
     rewards = []
-    for j in range(num_data):
+    for j in tqdm(range(num_data),desc='AT v DR'):
         action = [atk_policy([obs])[0],def_policy([obs])[0]]
         _,reward,_,_ = env.step(action)
         rewards.append(reward[0])
@@ -215,7 +229,7 @@ def get_rtmixed_nash(env,targeted_policy,random_policy):
     atk_policy = copy.deepcopy(random_policy)
     def_policy = copy.deepcopy(targeted_policy)
     rewards = []
-    for j in range(num_data):
+    for j in tqdm(range(num_data),desc='AR v DT'):
         action = [atk_policy([obs])[0],def_policy([obs])[0]]
         _,reward,_,_ = env.step(action)
         rewards.append(reward[0])
@@ -224,7 +238,8 @@ def get_rtmixed_nash(env,targeted_policy,random_policy):
     atk_policy = copy.deepcopy(random_policy)
     def_policy = copy.deepcopy(random_policy)
     rewards = []
-    for j in range(num_data):
+    num_data = 1000
+    for j in tqdm(range(num_data),desc='AR v DR'):
         action = [atk_policy([obs])[0],def_policy([obs])[0]]
         _,reward,_,_ = env.step(action)
         rewards.append(reward[0])
@@ -244,52 +259,55 @@ def get_rtmixed_nash(env,targeted_policy,random_policy):
     return p_atk,p_def
 
 if __name__ == '__main__':
-    trainset = np.load('data/12/C2/1sets_12targets_4356trials_RandomCycleExpl/subact_thresholdcasc_trialdata.npy')
-    util = np.load('data/12/C2/thresholdcasc_NashEQs/thresholdCasc_net_0_d2_util.npy')
-    from netcasc_gym_env import NetworkCascEnv
-
-    fn = 'data/12/C2/net_0.gpickle'
-    p = 2
-    all_actions = get_combinatorial_actions(12,p)
-    env = NetworkCascEnv(p,p,'File',6,filename=fn,cascade_type='threshold',degree=p)
-    obs = env.reset()
-    for d in trainset:
-        aa = tuple(int(i) for i in d[:p])
-        da = tuple(int(i) for i in d[p:-1])
-        rd = d[-1]
-        ai = all_actions.index(aa)
-        di = all_actions.index(da)
-        ru = util[ai,di]
-        _,rn,_,_ = env.step([aa,da])
-        if rd != ru:
-            print(f'ai: {ai}')
-            print(f'di: {di}')
-            print(f'rd: {rd}')
-            print(f'ru: {ru}')
-            print(f'rn: {rn[0]}')
-
-
-    # graph_dir = 'graphs/toynets/'
-    # graph = 'toynet_3c_10n'
-    # graph_path = f'{graph_dir}{graph}.gpickle'
-    # G = nx.read_gpickle(graph_path)
-    # num_nodes = G.number_of_nodes()
-    # all_actions = get_combinatorial_actions(num_nodes,1)
-    # rtmixed_fn = f'{graph_dir}/eqs/{graph}.np'
-
+    pass
+    # save_dir = 'data/toynets/10c_100n/'
+    # num_clusters = 10
+    # create_toy_nets(save_dir,num_clusters,nodes_per_cluster)
+    # trainset = np.load('data/12/C2/1sets_12targets_4356trials_RandomCycleExpl/subact_thresholdcasc_trialdata.npy')
+    # util = np.load('data/12/C2/thresholdcasc_NashEQs/thresholdCasc_net_0_d2_util.npy')
     # from netcasc_gym_env import NetworkCascEnv
-    # env = NetworkCascEnv(num_nodes,1,1,'File',embed_size=6,degree=2,filename=graph_path)
-    # act_sp = env.action_space
 
-    # sys.path.append('./marl/')
-    # from marl.policy.policies import RandomPolicy,TargetedPolicy,RTMixedPolicy
-    # random_policy = RandomPolicy(act_sp,all_actions= all_actions)
-    # targeted_policy = TargetedPolicy(act_sp,all_actions=all_actions)
+    # fn = 'data/12/C2/net_0.gpickle'
+    # p = 2
+    # all_actions = get_combinatorial_actions(12,p)
+    # env = NetworkCascEnv(p,p,'File',6,filename=fn,cascade_type='threshold',degree=p)
     # obs = env.reset()
-    # pt_atk,pt_def = get_rtmixed_nash(env,targeted_policy,random_policy)
-    # print(f'Attack Targeted %: {pt_atk*100}%')
-    # print(f'Defense Targeted %: {pt_def*100}%')
+    # for d in trainset:
+    #     aa = tuple(int(i) for i in d[:p])
+    #     da = tuple(int(i) for i in d[p:-1])
+    #     rd = d[-1]
+    #     ai = all_actions.index(aa)
+    #     di = all_actions.index(da)
+    #     ru = util[ai,di]
+    #     _,rn,_,_ = env.step([aa,da])
+    #     if rd != ru:
+    #         print(f'ai: {ai}')
+    #         print(f'di: {di}')
+    #         print(f'rd: {rd}')
+    #         print(f'ru: {ru}')
+    #         print(f'rn: {rn[0]}')
 
-    # np.save(rtmixed_fn,(pt_atk,pt_def))
 
-    #create_toy_nets('data/toynets/',3,100,show=True)
+    p = 2
+    graph_dir = 'data/toynets/10c_10n'
+    graph_path = f'{graph_dir}/net_0.gpickle'
+    G = nx.read_gpickle(graph_path)
+    num_nodes = G.number_of_nodes()
+    all_actions = get_combinatorial_actions(num_nodes,p)
+    rtmixed_fn = f'{graph_dir}/rt_mixed_eq.npy'
+
+    from netcasc_gym_env import NetworkCascEnv
+    env = NetworkCascEnv(p,p,'File',embed_size=6,degree=2,filename=graph_path)
+    act_sp = env.action_space
+
+    sys.path.append('./marl/')
+    from marl.policy.policies import RandomPolicy,TargetedPolicy,RTMixedPolicy
+    random_policy = RandomPolicy(act_sp,all_actions= all_actions)
+    targeted_policy = TargetedPolicy(act_sp,node_ranking='degree_centrality',all_actions=all_actions)
+    obs = env.reset()
+    pt_atk,pt_def = get_rtmixed_nash(env,targeted_policy,random_policy)
+    print(f'Attack Targeted %: {pt_atk*100}%')
+    print(f'Defense Targeted %: {pt_def*100}%')
+
+    np.save(rtmixed_fn,(pt_atk,pt_def))
+    print(f'Saved NashEQ to {rtmixed_fn}')

@@ -8,7 +8,7 @@ import itertools
 from scipy.stats import entropy
 from torch.utils.data import DataLoader
 
-from utils import get_combinatorial_actions, ncr
+from utils import get_combinatorial_actions, ncr,get_toy_clusters
 from graph_embedding import get_featurized_obs
 from NetCascDataset import NetCascDataset
 sys.path.append('./marl/')
@@ -17,7 +17,7 @@ from models import MLP_Critic, GCN_Critic, GAT_Critic
 from marl.tools import gymSpace2dim
 
 class Validator():
-	def __init__(self,envs,p=2,embedding=None,subact_sets=None,dataset=None,nash_eqs_dir=None,device='cpu',exploiter_model_dir=None,gnn=False):
+	def __init__(self,envs,p=2,embedding=None,subact_sets=None,dataset=None,nash_eqs_dir=None,device='cpu',exploiter_model_dir=None,gnn=False,toy=False):
 		self.envs = envs
 		self.gnn = gnn
 		#self.embedding = embedding
@@ -33,8 +33,13 @@ class Validator():
 		if nash_eqs_dir is not None and os.path.isdir(nash_eqs_dir):
 			fns = [f for f in os.listdir(nash_eqs_dir)]
 			fns.sort()
-			self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if (f'eq' in f and 'cluster' not in f)]
-			self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if (f'util' in f and 'cluster' not in f)]
+			if toy:
+				self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if (f'eq' in f and 'cluster' in f)]
+				self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if (f'util' in f and 'cluster' in f)]
+
+			else:
+				self.nashEQ_policies = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if (f'eq' in f and 'cluster' not in f)]
+				self.utils = [np.load(os.path.join(nash_eqs_dir,f)) for f in fns if (f'util' in f and 'cluster' not in f)]
 		else:
 			self.nashEQ_policies = []
 			self.utils = []
@@ -47,6 +52,10 @@ class Validator():
 				self.data_loader = None
 		else:
 			self.data_loader = None
+		if toy:
+			self.cluster_map = get_toy_clusters(self.envs[0].net)
+		else:
+			self.cluster_map = None
 	# def get_validation_set(self,subact_sets):
 	# 	train_set = []
 	# 	for subset in subact_sets:
@@ -86,6 +95,7 @@ class Validator():
 							edge_index=None
 
 						node_features = node_features.to(device)
+						node_features = node_features.to(torch.float32)
 						actions = actions.to(device)
 						B = reward.shape[0]
 						reward = reward.to(device)
@@ -104,10 +114,12 @@ class Validator():
 					num_nodes = G.number_of_nodes()
 					node_features = torch.tensor([G.nodes[n]['threshold'] for n in range(num_nodes)])
 					node_features = node_features.to(device)
+					from torch_geometric.utils import from_networkx
 					edge_index = from_networkx(G).edge_index
+					edge_index = edge_index.to(device)
 					for i,env in enumerate(self.envs):
-						atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions,device=device)
-						def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions,device=device)
+						atk_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=0,all_actions=self.all_actions,device=device,cluster_map=self.cluster_map)
+						def_policy = SubactMinimaxQCriticPolicy(q_model,action_space=self.act_space,player=1,all_actions=self.all_actions,device=device,cluster_map=self.cluster_map)
 						if self.gnn:
 							atk_pd,atk_Q_val = atk_policy.get_policy(node_features,edge_index)
 							def_pd,def_Q_val = def_policy.get_policy(node_features,edge_index)
@@ -132,7 +144,7 @@ class Validator():
 							else:
 								print('Could not identify RCR m.')
 								exit()
-							km_ratio = int(k/args.p)
+							km_ratio = int(k/self.p)
 							impl_policy = []
 							for bp in base_policy:
 								for combo in itertools.combinations(base_policy[0], km_ratio):
@@ -209,8 +221,9 @@ if __name__ == '__main__':
 		embed_size = state_dict['convs.0.lin.weight'].shape[0]
 		hidden_size = state_dict['mlp_layers.0.weight'].shape[0]
 		output_size = state_dict['output_layer.weight'].shape[0]
-		depth = int(len([key for key in state_dict if 'mlp_layers' in key])/2)
-		q_model = GCN_Critic(embed_size,hidden_size,output_size,num_mlp_layers=depth)
+		conv_depth = int(len([key for key in state_dict if 'conv' in key])/2)
+		mlp_depth = int(len([key for key in state_dict if 'mlp_layers' in key])/2)
+		q_model = GCN_Critic(embed_size,hidden_size,output_size,num_conv_layers=conv_depth,num_mlp_layers=mlp_depth)
 		from torch_geometric.utils import from_networkx
 		edge_index = from_networkx(G).edge_index
 		gnn = True

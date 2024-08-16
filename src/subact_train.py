@@ -42,6 +42,7 @@ if __name__ == '__main__':
 	parser.add_argument("--val_freq",default=100,type=int,help='Frequency (in epochs) at which to validate model.')
 	parser.add_argument("--cfda",default=False,type=bool,help='Whether to use CfDA data during training.')
 	parser.add_argument("--device",default='cpu',type=str,help='Device to perform training on.')
+	parser.add_argument("--toy",default=False,type=bool,help='Whether to use CfDA data during training.')
 	parser.add_argument("--p",default=2,type=int,help='Number of nodes selected for an action')
 
 	args = parser.parse_args()
@@ -117,8 +118,6 @@ if __name__ == '__main__':
 				"net_size": num_nodes,"num_targets":num_targets, "embed_size": args.embed_size,"dropout_rate": args.dropout_rate}
 	writer.add_hparams(hparams,{'dummy/dummy': 0},run_name=None)#'hparams')
 
-
-
 	print(q_model)
 	model_save_dir = args.model_save_dir + f'{num_nodes}_{num_targets}C2/{args.exp_name}/'
 	if not os.path.isdir(model_save_dir):
@@ -135,7 +134,7 @@ if __name__ == '__main__':
 		val_dataset = None
 	test_env = [NetworkCascEnv(args.p,args.p,'File',cascade_type=args.cascade_type,degree=args.p,
 				filename = args.ego_data_dir + 'net_0.gpickle')]
-	V = Validator(test_env,p=args.p,subact_sets=dataset.subact_sets,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir,device=device,gnn=gnn)
+	V = Validator(test_env,p=args.p,subact_sets=dataset.subact_sets,dataset=val_dataset,nash_eqs_dir=nash_eqs_dir,device=device,gnn=gnn,toy=args.toy)
 	#criterion = nn.SmoothL1Loss()
 	criterion = nn.BCELoss()
 
@@ -167,6 +166,7 @@ if __name__ == '__main__':
 			B = reward.shape[0]
 
 			node_features = node_features.to(device)
+			node_features = node_features.to(torch.float32)
 			actions = actions.to(device)
 			reward = reward.to(device)
 			multi_hot_failures = multi_hot_failures.to(device)
@@ -228,7 +228,8 @@ if __name__ == '__main__':
 						os.remove(model_save_path)
 					torch.save(q_model.state_dict(),model_save_path)	
 					best_val_err = val_err	
-				q_model.train()
+			q_model.train()
+
 
 		if nash_eq_div is not None:
 			epoch_progress_bar.set_postfix({'train_loss': epoch_loss,'train_err': pred_err,'val_err': val_err,'util_err': util_err})

@@ -68,11 +68,16 @@ def _gen_utils_eqs(fnci):
     print(f'EQ: {eqs}')
     np.save(f_eq,eqs)
 
-def get_toy_eq(nash_eqs_dir,filename,node_map,degree):
+def get_toy_eq(nash_eqs_dir,node_map,degree=2):
     num_clusters = int(max(node_map)+1)
     num_nodes = len(node_map)
     num_nodes_attacked = degree
-    all_cluster_actions = get_combinatorial_actions(num_clusters,degree)
+    good_cluster_combs = get_combinatorial_actions(num_clusters,degree)
+    pairs_zero = [(-1,n) for n in range(num_clusters)]
+    same_pairs = [(n,n) for n in range(num_clusters)]
+    wrong_cluster_combs = pairs_zero + same_pairs
+    all_cluster_actions = good_cluster_combs + wrong_cluster_combs
+
     num_cluster_actions = len(all_cluster_actions)
 
     reward_map = np.zeros(num_clusters)
@@ -89,10 +94,13 @@ def get_toy_eq(nash_eqs_dir,filename,node_map,degree):
         for j in range(num_cluster_actions):
             atk_list = all_cluster_actions[i]
             def_list = all_cluster_actions[j]
-            casc_list = [cluster for cluster in atk_list if cluster not in def_list]
+            casc_list = list(set([cluster for cluster in atk_list if cluster not in def_list]))
             reward = 0
             for cluster in casc_list:
-                reward += reward_map[cluster]
+                if cluster != -1:
+                    reward += reward_map[cluster]
+                else:
+                    reward += 1/num_nodes
             U_cluster[i,j] = gambit.Rational(reward)
     print(f'Caculating Nash Eqs')
     g = gambit.Game.from_arrays(U_cluster,-U_cluster)
@@ -109,39 +117,58 @@ def get_toy_eq(nash_eqs_dir,filename,node_map,degree):
     np.save(f_eq,eqs_cluster)
     print(f'U (cluster): {np.array(U_cluster,dtype=float)}')
     f_util = nash_eqs_dir + f'/net_0_util_cluster.npy'
+    U_cluster = np.array(U_cluster,dtype=float)
     np.save(f_util,U_cluster)
 
     #Convert back to nodes
     all_actions = get_combinatorial_actions(num_nodes,degree)
     num_actions = len(all_actions)
-    cluster_reps = {}
-    for node, cluster in enumerate(node_map):
-        if cluster >= 0 and cluster not in cluster_reps:
-            cluster_reps[cluster] = node
-    U = np.zeros([num_actions,num_actions],dtype=gambit.Rational)
-    for i in range(num_cluster_actions):
-        for j in range(num_cluster_actions):
-            action_i = tuple(sorted([cluster_reps[c] for c in all_cluster_actions[i]]))
-            i_idx = all_actions.index(action_i)
-            action_j = tuple(sorted([cluster_reps[c] for c in all_cluster_actions[j]]))
-            j_idx = all_actions.index(action_j)
-            U[i_idx,j_idx] = U_cluster[i,j]
-    U = np.array(U,dtype=float)
+    if num_actions > 225000:
+        print('Utility Matrix too large for node representaion')
+    else:
+        cluster_reps = {}
+        for node, cluster in enumerate(node_map):
+            if cluster not in cluster_reps:
+                cluster_reps[cluster] = [node]
+            else:
+                cluster_reps[cluster].append(node)
 
-    eqs = np.zeros((2,num_actions))
-    for i,eq_c in enumerate(eqs_cluster):
-        for j,p_c in enumerate(eq_c):
-            action = tuple(sorted([cluster_reps[c] for c in all_cluster_actions[j]]))
-            idx = all_actions.index(action)
-            eqs[i,idx] = p_c
+        U = np.zeros([num_actions,num_actions],dtype=gambit.Rational)
+        for i in range(num_actions):
+            for j in range(num_actions):
+                action_i = all_actions[i]
+                action_j = all_actions[j]
+                cluster_action_i = tuple(sorted([node_map[node] for node in action_i]))
+                cluster_action_j = tuple(sorted([node_map[node] for node in action_j]))
+                if cluster_action_i in all_cluster_actions and cluster_action_j in all_cluster_actions:
+                    idx_i = all_cluster_actions.index(cluster_action_i)
+                    idx_j = all_cluster_actions.index(cluster_action_j)
+                    U[i, j] = U_cluster[idx_i, idx_j]
+                else:
+                    U[i, j] = gambit.Rational(0)
+        U = np.array(U,dtype=float)
 
-    print(f'EQ: {eqs}')
-    f_eq = nash_eqs_dir + f'/net_0_eq.npy'
-    np.save(f_eq,eqs)
-    print(f'U: {U}')
-    f_util = nash_eqs_dir + f'/net_0_util.npy'
-    np.save(f_util,U)
-    return eqs, U
+        eqs = np.zeros((2,num_actions))
+        for i,eq_c in enumerate(eqs_cluster):
+            for j,p_c in enumerate(eq_c):
+                #action = tuple(sorted([cluster_reps[c] for c in all_cluster_actions[j]]))
+                action = []
+                for c in all_cluster_actions[j]:
+                    if cluster_reps[c][0] not in action:
+                        action.append(cluster_reps[c][0])
+                    else:
+                        action.append(cluster_reps[c][1])
+                action = tuple(action)
+                idx = all_actions.index(action)
+                eqs[i,idx] = p_c
+
+        print(f'EQ: {eqs}')
+        f_eq = nash_eqs_dir + f'/net_0_eq.npy'
+        np.save(f_eq,eqs)
+        print(f'U: {U}')
+        f_util = nash_eqs_dir + f'/net_0_util.npy'
+        np.save(f_util,U)
+        return eqs, U
 
 if __name__ == '__main__':
     import argparse
@@ -177,7 +204,7 @@ if __name__ == '__main__':
     if 'toy' in dir_name:
         from analyze_results import get_toy_clusters
         node_map = get_toy_clusters(G)
-        eqs,U = get_toy_eq(nash_eqs_dir,exp_name,node_map,args.p)
+        eqs,U = get_toy_eq(nash_eqs_dir,node_map,args.p)
     else:
         tic = time.perf_counter()
         fnci = (graph_path,args.cascade_type,0)

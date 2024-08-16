@@ -23,7 +23,7 @@ class NetworkCascEnv(gym.Env):
         self.episode = 0
         self.topo_eps = topo_eps
         self.topo_count = 0
-        immunization = False
+        immunization = True
         self.immunization = immunization
 
         if self.network_type == 'File' and filename is not None:

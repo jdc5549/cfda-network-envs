@@ -149,7 +149,6 @@ def perform_val_trials(args,topo_fn,train_actions,cycle=True):
         shuffled_combinations = action_combinations.copy()
         random.shuffle(shuffled_combinations)
         break_flag = False
-
     with tqdm(total=args.max_valset_trials, desc='Validation Action Selection', unit='iteration') as pbar:
         if cycle:
             for a1,a2 in shuffled_combinations:
@@ -290,11 +289,11 @@ def create_dataset(args):
     if not args.overwrite and os.path.exists(f'{subact_save_name}_splitbyset_trialdata.npy') and os.path.exists(f'{subact_save_name}_splitbyset_trialinfo.pkl'):
         print(f'Loading Factual Data from: {subact_save_name}_trialdata.npy')
         allsets_trialdata = np.load(f'{subact_save_name}_splitbyset_trialdata.npy')
-        with open(f'{subact_save_name}_splitbyset_trialinfo.pkl','rb') as file:
-            allsets_trialinfo = pickle.load(file)
+        # with open(f'{subact_save_name}_splitbyset_trialinfo.pkl','rb') as file:
+        #     allsets_trialinfo = pickle.load(file)
         casc_data = np.load(f'{subact_save_name}_trialdata.npy')
-        with open(f'{subact_save_name}_trialinfo.pkl','rb') as file:
-            casc_info = pickle.load(file)
+        # with open(f'{subact_save_name}_trialinfo.pkl','rb') as file:
+        #     casc_info = pickle.load(file)
         with open(f'{subact_save_name}_keys.pkl','rb') as file:
             casc_keys = pickle.load(file)
         fac_data_time = None
@@ -390,7 +389,7 @@ def create_dataset(args):
         if args.max_valset_trials > 0:
             if args.cfda:
                 train_data = np.concatenate((train_data,cfac_trials))
-            val_data = perform_val_trials(args,topo_fn,train_data[:,:-1])
+            val_data = perform_val_trials(args,topo_fn,train_data[:,:-1],cycle=False)
             np.save(save_dir + f'subact_{args.cascade_type}casc_valdata.npy',val_data)
     else:
         print(f'Loading Validation Data from: {subact_save_name}_valdata.npy')

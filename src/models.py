@@ -15,28 +15,53 @@ class MLP_Critic(torch.nn.Module):
         num_mlp_layers = max([num_mlp_layers,1])
         for i in range(num_mlp_layers-1):
             self.mlp_layers.append(nn.Linear(hidden_size,hidden_size))
+        # self.mlp_layers = self.mlp_layers.to('cuda:1')
+        # for layer in self.mlp_layers:
+        #     layer.to('cuda:1')
         self.output_layer = nn.Linear(hidden_size,num_nodes)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self,actions,node_features=None):
         #GCN Encoding
-        node_features = node_features.to(torch.float32).squeeze()
+        node_features = node_features.squeeze()
         a = actions[...,0]
         a_emb = self.act_embedding(a)
         d = actions[...,1]
         d_emb = self.act_embedding(d)
-        #x = torch.cat([a_emb,d_emb],-1)#,node_features],-1)
-        x = torch.cat([a_emb,d_emb,node_features],-1)
+        a_emb = a_emb.to(node_features.dtype)
+        d_emb = d_emb.to(node_features.dtype)
+
+        if node_features.dtype == torch.float16:
+            move = True
+            a_emb = a_emb.to('cuda:2')
+            d_emb = d_emb.to('cuda:2')
+            node_features = node_features.to('cuda:2')
+            x = torch.cat([a_emb,d_emb,node_features],-1)
+            x = x.to('cuda:1')
+        else:
+            move = False
+            x = torch.cat([a_emb,d_emb,node_features],-1)
         #MLP for Encoded vector
+
         for layer in self.mlp_layers:
+            if move:
+                layer.to('cuda:1').half()
             x = F.relu(layer(x))
             x = F.dropout(x,p=self.dropout_rate,training=self.training)
+        if move:
+            self.output_layer.to('cuda:3').half()
+            x = x.to('cuda:3')
         x = self.output_layer(x)
         output = self.sigmoid(x.squeeze(-1))
+        output = output.to('cuda:0')
+        if move:
+            for layer in self.mlp_layers:
+                layer.to('cuda:0').to(torch.float32)
+            self.output_layer.to('cuda:0').to(torch.float32)
         return output
 
 class GCN_Critic(torch.nn.Module):
-    def __init__(self,embed_size,hidden_size,num_nodes,num_conv_layers=2,num_mlp_layers=3,dropout=0.4):
+    def __init__(self,embed_size,hidden_size,num_nodes,num_conv_layers=3,num_mlp_layers=2,dropout=0.4):
         super().__init__()
         from torch_geometric.nn import GCNConv,Linear
         from torch_geometric.nn.pool import global_add_pool
@@ -67,14 +92,22 @@ class GCN_Critic(torch.nn.Module):
 
     def forward(self,actions,node_features,edge_index):
         #GCN Encoding
+        size = len(node_features)
+        if size < 3:
+            node_features = node_features.unsqueeze(1)
         batch_size,num_features,num_nodes = node_features.shape
         batch = torch.zeros(batch_size*num_nodes,dtype=torch.int64)
         batch = batch.to(node_features.device)
         for i in range(batch_size):
             batch[i*num_nodes:(i+1)*(num_nodes)] = i
         node_features = node_features.to(torch.float32).squeeze()
-        x = torch.stack((actions[:,:,0],actions[:,:,1],node_features),dim=2)
-        x = x.reshape(batch_size*num_nodes,x.shape[2])
+        if size == 2:
+            print(actions.shape)
+            x = torch.stack((actions[:,0],actions[:,1],node_features))
+            x = x.reshape(batch_size*num_nodes,x.shape[2])
+        else:    
+            x = torch.stack((actions[:,:,0],actions[:,:,1],node_features),dim=2)
+            x = x.reshape(batch_size*num_nodes,x.shape[2])
         edge_index_batches = edge_index[:]
         for i,b in enumerate(edge_index_batches):
             b += i*num_nodes
